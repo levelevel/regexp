@@ -2,8 +2,13 @@
 // A Regular Expression Matcher
 // Code by Rob Pike 
 
+#include "regexp.h"
+
+static int matchhere(const char *regexp, const char *text);
+static int matchstar(int c, const char *regexp, const char *text);
+
 /* match: search for regexp anywhere in text */
-int match(char *regexp, char *text)
+int match(const char *regexp, const char *text)
 {
     if (regexp[0] == '^')
         return matchhere(regexp+1, text);
@@ -15,7 +20,7 @@ int match(char *regexp, char *text)
 }
 
 /* matchhere: search for regexp at beginning of text */
-int matchhere(char *regexp, char *text)
+static int matchhere(const char *regexp, const char *text)
 {
     if (regexp[0] == '\0')
         return 1;
@@ -29,7 +34,7 @@ int matchhere(char *regexp, char *text)
 }
 
 /* matchstar: search for c*regexp at beginning of text */
-int matchstar(int c, char *regexp, char *text)
+static int matchstar(int c, const char *regexp, const char *text)
 {
     do {    /* a * matches zero or more instances */
         if (matchhere(regexp, text))
