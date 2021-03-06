@@ -9,8 +9,8 @@ TEST=$(TEST_SRC:.c=)
 
 $(OBJS): $(SRCS) $(HEADS)
 
-$(TEST): $(TEST_SRC)
-	$(CC) $(CFLAGS) -I. -o $@ $^ $(LDFLAGS) $(OBJS)
+$(TEST): $(TEST_SRC) $(OBJS)
+	$(CC) $(CFLAGS) -I. -o $@ $^ $(LDFLAGS)
 
 test: $(TEST)
 	$(TEST)
