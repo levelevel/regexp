@@ -5,6 +5,7 @@ OBJS=$(SRCS:.c=.o)
 HEADS=regexp.h
 
 TEST_SRC=test/test.c
+TEST_HEAD=test/test_dat.h
 TEST=$(TEST_SRC:.c=)
 
 $(OBJS): $(SRCS) $(HEADS)
