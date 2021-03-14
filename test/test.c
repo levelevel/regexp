@@ -1,9 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <regex.h>
-#include "regexp.h"
+
+#include "../regexp.h"
 
 typedef struct {
+    int no;
     const char *text;
     const char *regexp;
     const int expect;
@@ -12,10 +14,16 @@ test_t data[] = {
     #include "test_dat.h"
 };
 
-static int test_regexp(int n, const char *text, const char *regexp) {
+static int test_regexp(test_t *test_data) {
+    int n = test_data->no;
+    const char *text = test_data->text;
+    const char *regexp = test_data->regexp;
     regex_t preg;
+    reg_compile_t *preg_compile;
     int errcode;
     int ret1, ret2; //1:一致、0:不一致、-1:エラー
+    int result = 1; //1:OK, 0:NG
+
     //regmatch_t *pmatch;
     errcode = regcomp(&preg, regexp, REG_NOSUB);
     if (errcode!=0) {
@@ -29,20 +37,36 @@ static int test_regexp(int n, const char *text, const char *regexp) {
         //int ret1 = regexec(&preg, text, nmatch, pmatch, REG_NEWLINE)==0;
         ret1 = regexec(&preg, text, 0, NULL, 0)==0;
     }
-    ret2 = match(regexp, text);
+
+    preg_compile = reg_compile(regexp);
+    if (preg_compile==NULL) {
+        fprintf(stderr, "%d: regexp Error: regexp='%s'\n", n, regexp);
+        ret2 = -1;
+    } else {
+        ret2 = reg_exec(preg_compile, text);
+    }
     if (ret1 != ret2) {
         printf("ERROR: %d: %d:%d text='%s', regexp='%s'\n", n, ret1, ret2, text, regexp);
+        result = 0;
     }
     //free(pmatch);
     regfree(&preg);
-    return 1;
+    reg_compile_free(preg_compile);
+    preg_compile = NULL;
+    return result;
 }
 
 int main(int argc, char **argv) {
-    int result = 0;
-    for (int i=0; i<sizeof(data)/sizeof(test_t); i++) {
-        test_t *t = &data[i];
-        test_regexp(i, t->text, t->regexp);
+    int err_cnt = 0;
+    int size = sizeof(data)/sizeof(test_t);
+    for (int i=0; i<size; i++) {
+        if (test_regexp(&data[i])==0) err_cnt++;
     }
-    return result;
+    if (err_cnt==0) {
+        printf("PASS: %d\n", size);
+        return 0;
+    } else {
+        printf("FAIL: %d/%d\n", err_cnt, size);
+        return 1;
+    }
 }
