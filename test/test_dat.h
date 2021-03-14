@@ -65,8 +65,8 @@
     TEST_DATA("abc", "a**", -1)
     TEST_DATA("abc", ".*", 1)
     TEST_DATA("abc", "a.*", 1)
+    TEST_DATA("abc", "a.*c", 1)
 
-#if 0
     TEST_DATA("abc", "[a]", 1)
     TEST_DATA("abc", "a[ab]", 1)
     TEST_DATA("abc", "a[abc]c", 1)
@@ -78,9 +78,15 @@
     TEST_DATA("-", "[a-]", 1)
     TEST_DATA("abc", "[a-c]", 1)
     TEST_DATA("abc", "[c-a]", -1)    //Error
+    TEST_DATA("abc", "[a-a]", 1)
     TEST_DATA("abc", "[x-z]", 0)
     TEST_DATA("abc", "[0-9]", 0)
     TEST_DATA("123", "[0-9]", 1)
     TEST_DATA("abc/5", "[a-z]/[0-9]", 1)
     TEST_DATA("abc/z5", "[a-z]/[0-9]", 0)
-#endif
+
+    TEST_DATA("abc", "[b]*", 1)
+    TEST_DATA("abc", "[b]*c", 1)
+    TEST_DATA("abc", "a[b]*c", 1)
+    TEST_DATA("abbc", "[b]*", 1)
+    TEST_DATA("abbc", "a[b-c]*[a-b]*c", 1)
