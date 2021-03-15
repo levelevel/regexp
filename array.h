@@ -4,6 +4,8 @@
 //- データ：任意のポインタ
 //- 追加・削除・複製・push・pop・サイズ指定・サイズ固定
 
+#pragma once
+
 //ポインタ版動的配列
 typedef struct array {
     int num;

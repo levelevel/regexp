@@ -23,13 +23,12 @@ static int test_regexp(test_t *test_data) {
     int errcode;
     int ret1, ret2; //1:一致、0:不一致、-1:エラー
     int result = 1; //1:OK, 0:NG
+    char buf[1024];
 
     //regmatch_t *pmatch;
     errcode = regcomp(&preg, regexp, REG_NOSUB);
     if (errcode!=0) {
-        char buf[1024];
         regerror(errcode, &preg, buf, sizeof(buf));
-        fprintf(stderr, "%d: regex Error: regexp='%s', %s\n", n, regexp, buf);
         ret1 = -1;
     } else {
         //size_t nmatch = preg.re_nsub+1;
@@ -40,15 +39,20 @@ static int test_regexp(test_t *test_data) {
 
     preg_compile = reg_compile(regexp);
     if (preg_compile==NULL) {
-        fprintf(stderr, "%d: regexp Error: regexp='%s'\n", n, regexp);
         ret2 = -1;
     } else {
         ret2 = reg_exec(preg_compile, text);
     }
-    if (ret1 != ret2) {
+
+    if (ret1 != ret2 || ret1 != test_data->expect) {
         printf("ERROR: %d: %d:%d text='%s', regexp='%s'\n", n, ret1, ret2, text, regexp);
         result = 0;
     }
+    if (errcode!=reg_err_code) {
+        fprintf(stderr, "%d: regex  Error: regexp='%s', errcode=%d, %s\n", n, regexp, errcode, buf);
+        fprintf(stderr, "%d: regexp Error: regexp='%s', errcode=%d, %s\n", n, regexp, reg_err_code, reg_err_msg);
+    }
+
     //free(pmatch);
     regfree(&preg);
     reg_compile_free(preg_compile);
