@@ -1,4 +1,4 @@
-CFLAGS=-std=c11 -g -Wall
+CFLAGS=-std=c11 -g -Wall -Wunused-parameter
 
 SRCS=$(wildcard *.c)
 HEADS=$(wildcard *.h)

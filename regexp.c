@@ -68,6 +68,7 @@ static pattern_t *new_repeat(const char*regexp, int *len);
 static pattern_t *new_char_set(const char*regexp, int *len);
 static int reg_check_prev(reg_compile_t *preg_compile);
 static int reg_match_here(pattern_t **pat, const char *text);
+static void set_match(regmatch_t *pmatch, const char *text_org);
 static int reg_match_pat(pattern_t *pat, const char *text);
 static int reg_match_repeat(pattern_t *c, pattern_t *rep, pattern_t **pat, const char *text);
 
@@ -110,7 +111,7 @@ reg_compile_t* reg_compile(const char *regexp) {
                 pat = new_repeat(p, &len);
                 p += len-1;
             }
-        } else if (p[0]=='\\' && strchr(SPECIAL_CHARS, p[1])) {
+        } else if (p[0]=='\\' /*&& strchr(SPECIAL_CHARS, p[1])*/) {
             pat = new_pattern(PAT_CHAR);
             pat->c = p[1];
             p++;            
@@ -258,28 +259,52 @@ static int reg_check_prev(reg_compile_t *preg_compile) {
     return 0;
 }
 
+static const char *G_rm_sp; //マッチング開始位置
+static const char *G_rm_ep; //マッチング終了位置の次の位置
+
 // reg_exec: search for compiled regexp anywhere in text
-int reg_exec(reg_compile_t *preg_compile, const char *text) {
+int reg_exec(reg_compile_t *preg_compile, const char *text, size_t nmatch, regmatch_t *pmatch) {
+    (void)nmatch;
     assert(preg_compile);
     assert(preg_compile->array);
+    const char *text_org = text;
     pattern_t **pat = (pattern_t**)preg_compile->array->buckets;
+    if (pmatch) pmatch->rm_so = pmatch->rm_eo = 0;//-1;
     if (preg_compile->match_begin) {
-        return reg_match_here(pat, text);
+        G_rm_sp = text_org;
+        if (reg_match_here(pat, text)) {
+            set_match(pmatch, text_org);
+            return 0;
+        }
+        return 1;
     } else {
         do {    /* must look even if string is empty */
-            if (reg_match_here(pat, text)) return 1;
+            G_rm_sp = text;
+            if (reg_match_here(pat, text)) {
+                set_match(pmatch, text_org);
+                return 0;
+            }
         } while (*text++!='\0');
     }
-    return 0;
+    return 1;
+}
+
+//マッチング位置のインデックスを記録する
+static void set_match(regmatch_t *pmatch, const char *text_org) {
+    if (pmatch) {
+        pmatch->rm_so = G_rm_sp-text_org;
+        pmatch->rm_eo = G_rm_ep-text_org;
+    }
 }
 
 // reg_match_here: search for regexp at beginning of text
 static int reg_match_here(pattern_t **pat, const char *text) {
-    if (pat[0]->type==PAT_NULL)
+    if (pat[0]->type==PAT_NULL) {
+        G_rm_ep = text;
         return 1;
+    }
     if (pat[1]->type==PAT_REPEAT)
         return reg_match_repeat(pat[0], pat[1], pat+2, text);
-
     switch (pat[0]->type) {
     case PAT_CHAR:
     case PAT_CHARSET:
@@ -288,7 +313,10 @@ static int reg_match_here(pattern_t **pat, const char *text) {
             return reg_match_here(pat+1, text+1);
         else return 0;
     case PAT_END:
-        return *text=='\0';
+        if (*text=='\0') {
+            G_rm_ep = text;
+            return 1;
+        } else return 0;
     default:
         return 0;
     }
@@ -318,10 +346,11 @@ static int reg_match_repeat(pattern_t *c, pattern_t *rep, pattern_t **pat, const
     assert(rep->type==PAT_REPEAT);
     int max = rep->max<0?999:rep->max;
     int cnt = 0;
+    int ret = 0;
     do {    /* a \{0,n\} matches zero or more instances */
-        if (cnt++>=rep->min && reg_match_here(pat, text)) return 1;   //最短一致
+        if (cnt++>=rep->min && reg_match_here(pat, text)) ret = 1;   //最短一致ならここでreturn 1する
     } while (reg_match_pat(c, text++) && cnt<=max);
-    return 0;
+    return ret;
 }
 
 void reg_compile_free(reg_compile_t* preg_compile) {
