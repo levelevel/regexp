@@ -49,7 +49,7 @@ static int test_regexp(test_t *test_data) {
     }
 
     int len = strlen(test_data->match);
-    int match_sub = ret1<0 ||
+    int match_sub = ret1<0 || ret2<0 ||
         (len==pmatch2->rm_eo-pmatch2->rm_so &&
         strncmp(test_data->text+pmatch2->rm_so, test_data->match, len)==0 &&
         pmatch1->rm_so==pmatch2->rm_so && pmatch1->rm_eo==pmatch2->rm_eo);

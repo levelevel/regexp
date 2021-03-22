@@ -29,6 +29,7 @@ typedef enum {
     PAT_CHARSET,// [s] [^s]
     PAT_DOT,    // .
     PAT_REPEAT, // *, \{m,n\}
+    PAT_SUBREG, // \(r\)
     PAT_END,    // $
     PAT_NULL,   //パターンの終わり
 } pattern_type_t;
@@ -39,6 +40,8 @@ typedef struct {
     char *chars;
 } char_set_t;
 
+typedef struct regcomp regcomp_t;
+
 //パターン
 typedef struct {
     pattern_type_t  type;
@@ -48,6 +51,7 @@ typedef struct {
         struct {
             int min, max;   //type=PAT_REPEAT
         };
+        regcomp_t *regcomp; //type=PAT_SUBREG
     };
 } pattern_t;
 
@@ -66,11 +70,13 @@ const char *reg_err_msg = "";   //エラーメッセージ
 static pattern_t *new_pattern(pattern_type_t type);
 static pattern_t *new_repeat(const char*regexp, int *len);
 static pattern_t *new_char_set(const char*regexp, int *len);
+static pattern_t *new_subreg(const char*regexp, int *len);
 static int reg_check_prev(reg_compile_t *preg_compile);
-static int reg_match_here(pattern_t **pat, const char *text);
-static void set_match(regmatch_t *pmatch, const char *text_org);
-static int reg_match_pat(pattern_t *pat, const char *text);
-static int reg_match_repeat(pattern_t *c, pattern_t *rep, pattern_t **pat, const char *text);
+static int reg_match_here(pattern_t **pat, const char *text, const char **rm_ep);
+static void set_match(regmatch_t *pmatch, const char *text_org, const char *rm_sp, const char *rm_ep);
+static int reg_match_pat(pattern_t *pat, const char *text, int *len);
+static int reg_match_repeat(pattern_t *c, pattern_t *rep, pattern_t **pat, const char *text, const char **rm_ep);
+static void reg_pattern_free(pattern_t *pat);
 
 // reg_compile: compile regexp
 reg_compile_t* reg_compile(const char *regexp) {
@@ -111,6 +117,10 @@ reg_compile_t* reg_compile(const char *regexp) {
                 pat = new_repeat(p, &len);
                 p += len-1;
             }
+        } else if (p[0]=='\\' && p[1]=='(') {
+            int len = 0;
+            pat = new_subreg(p, &len);
+            p += len-1;
         } else if (p[0]=='\\' /*&& strchr(SPECIAL_CHARS, p[1])*/) {
             pat = new_pattern(PAT_CHAR);
             pat->c = p[1];
@@ -139,6 +149,38 @@ static pattern_t *new_pattern(pattern_type_t type) {
     pattern_t *pat = calloc(1, sizeof(pattern_t));
     assert(pat);
     pat->type = type;
+    return pat;
+}
+
+// new_subreg: \(\)の中身を抽出する
+static pattern_t *new_subreg(const char*regexp, int *len) {
+    pattern_t *pat = new_pattern(PAT_SUBREG);
+    assert(regexp[0] == '\\');
+    assert(regexp[1] == '(');
+    const char *org = regexp;
+    
+    regexp += 2;
+    char *p = strstr(regexp, "\\)");
+    if (p==NULL) {
+        reg_pattern_free(pat);
+        reg_err_code = 8;
+        reg_err_msg = "Unmatched \\(";
+        return NULL;
+    }
+
+    int sublen = p-regexp;
+    char *sub_regexp = malloc(sublen+1);
+    strncpy(sub_regexp, regexp, sublen);
+    sub_regexp[sublen] = '\0';
+    pat->regcomp = reg_compile(sub_regexp);
+    free(sub_regexp);
+    if (pat->regcomp==NULL) {
+        reg_pattern_free(pat);
+        return NULL;
+    }
+    pat->regcomp->match_begin = 1;
+
+    *len = (p+2)-org;
     return pat;
 }
 
@@ -182,13 +224,13 @@ static pattern_t *new_repeat(const char*regexp, int *len) {
         }
     }
     if (mode<2) {
-        free(pat);
+        reg_pattern_free(pat);
         reg_err_code = 9;
-        reg_err_msg = "IUnmatched \\{";
+        reg_err_msg = "Unmatched \\{";
         return NULL;
     }
     if (mode==10 || (max>0 && min>max)) {
-        free(pat);
+        reg_pattern_free(pat);
         reg_err_code = 10;
         reg_err_msg = "Invalid content of \\{\\}";
         return NULL;
@@ -211,6 +253,12 @@ static pattern_t *new_char_set(const char*regexp, int *len) {
 
     regexp++;
     if (*regexp == '^') {
+        if (regexp[1]==']') {
+            reg_pattern_free(pat);
+            reg_err_code = 7;
+            reg_err_msg = "Unmatched [, [^, [:, [., or [=";
+            return NULL;
+        }
         char_class->reverse = 1;
         regexp++;
     }
@@ -221,8 +269,7 @@ static pattern_t *new_char_set(const char*regexp, int *len) {
     for (; *regexp != '\0'; regexp++) {
         if (*regexp == '-' && regexp[1] != '\0' && regexp[1] != ']') {
             if (regexp[-1]>regexp[1]) {
-                free(char_class->chars);
-                free(pat);
+                reg_pattern_free(pat);
                 reg_err_code = 11;
                 reg_err_msg = "Invalid range end";
                 return NULL;
@@ -252,6 +299,7 @@ static int reg_check_prev(reg_compile_t *preg_compile) {
     case PAT_CHAR:
     case PAT_CHARSET:
     case PAT_DOT:
+    case PAT_SUBREG:
         return 1;   //繰り返し可能
     default:
         return 0;
@@ -259,29 +307,25 @@ static int reg_check_prev(reg_compile_t *preg_compile) {
     return 0;
 }
 
-static const char *G_rm_sp; //マッチング開始位置
-static const char *G_rm_ep; //マッチング終了位置の次の位置
-
 // reg_exec: search for compiled regexp anywhere in text
 int reg_exec(reg_compile_t *preg_compile, const char *text, size_t nmatch, regmatch_t *pmatch) {
     (void)nmatch;
     assert(preg_compile);
     assert(preg_compile->array);
     const char *text_org = text;
+    const char *rm_ep;
     pattern_t **pat = (pattern_t**)preg_compile->array->buckets;
     if (pmatch) pmatch->rm_so = pmatch->rm_eo = 0;//-1;
     if (preg_compile->match_begin) {
-        G_rm_sp = text_org;
-        if (reg_match_here(pat, text)) {
-            set_match(pmatch, text_org);
+        if (reg_match_here(pat, text, &rm_ep)) {
+            set_match(pmatch, text_org, text_org, rm_ep);
             return 0;
         }
         return 1;
     } else {
         do {    /* must look even if string is empty */
-            G_rm_sp = text;
-            if (reg_match_here(pat, text)) {
-                set_match(pmatch, text_org);
+            if (reg_match_here(pat, text, &rm_ep)) {
+                set_match(pmatch, text_org, text, rm_ep);
                 return 0;
             }
         } while (*text++!='\0');
@@ -290,31 +334,35 @@ int reg_exec(reg_compile_t *preg_compile, const char *text, size_t nmatch, regma
 }
 
 //マッチング位置のインデックスを記録する
-static void set_match(regmatch_t *pmatch, const char *text_org) {
+static void set_match(regmatch_t *pmatch, const char *text_org, const char *rm_sp, const char *rm_ep) {
     if (pmatch) {
-        pmatch->rm_so = G_rm_sp-text_org;
-        pmatch->rm_eo = G_rm_ep-text_org;
+        pmatch->rm_so = rm_sp-text_org;
+        pmatch->rm_eo = rm_ep-text_org;
     }
 }
 
 // reg_match_here: search for regexp at beginning of text
-static int reg_match_here(pattern_t **pat, const char *text) {
+static int reg_match_here(pattern_t **pat, const char *text, const char **rm_ep) {
     if (pat[0]->type==PAT_NULL) {
-        G_rm_ep = text;
+        *rm_ep = text;
         return 1;
     }
     if (pat[1]->type==PAT_REPEAT)
-        return reg_match_repeat(pat[0], pat[1], pat+2, text);
+        return reg_match_repeat(pat[0], pat[1], pat+2, text, rm_ep);
     switch (pat[0]->type) {
     case PAT_CHAR:
     case PAT_CHARSET:
     case PAT_DOT:
-        if (reg_match_pat(pat[0], text))
-            return reg_match_here(pat+1, text+1);
+    case PAT_SUBREG:
+    {
+        int len;
+        if (reg_match_pat(pat[0], text, &len))
+            return reg_match_here(pat+1, text+len,rm_ep);
         else return 0;
+    }
     case PAT_END:
         if (*text=='\0') {
-            G_rm_ep = text;
+            *rm_ep = text;
             return 1;
         } else return 0;
     default:
@@ -324,10 +372,9 @@ static int reg_match_here(pattern_t **pat, const char *text) {
 }
 
 // reg_match_pat: 1個のパターンがマッチするかを判定
-static int reg_match_pat(pattern_t *pat, const char *text) {
+static int reg_match_pat(pattern_t *pat, const char *text, int *len) {
+    *len = 1;   //patにマッチしたtextの長さ
     switch (pat->type) {
-    case PAT_DOT:
-        return *text != '\0';
     case PAT_CHAR:
         return pat->c == *text;
     case PAT_CHARSET:
@@ -335,6 +382,17 @@ static int reg_match_pat(pattern_t *pat, const char *text) {
         if (strchr(pat->chars.chars, *text))
             return !pat->chars.reverse;
         return pat->chars.reverse;
+    case PAT_DOT:
+        return *text != '\0';
+    case PAT_SUBREG:
+    {
+        regmatch_t pmatch;
+        if (reg_exec(pat->regcomp, text, 1, &pmatch)==0) {
+            *len = pmatch.rm_eo - pmatch.rm_so;
+            return 1;
+        }
+        return 0;
+    }
     default:
         return 0;
     }
@@ -342,20 +400,41 @@ static int reg_match_pat(pattern_t *pat, const char *text) {
 }
 
 // reg_match_repeat: search for c\{m,n\} regexp at beginning of text
-static int reg_match_repeat(pattern_t *c, pattern_t *rep, pattern_t **pat, const char *text) {
+static int reg_match_repeat(pattern_t *c, pattern_t *rep, pattern_t **pat, const char *text, const char **rm_ep) {
     assert(rep->type==PAT_REPEAT);
     int max = rep->max<0?999:rep->max;
     int cnt = 0;
     int ret = 0;
+    int len;
     do {    /* a \{0,n\} matches zero or more instances */
-        if (cnt++>=rep->min && reg_match_here(pat, text)) ret = 1;   //最短一致ならここでreturn 1する
-    } while (reg_match_pat(c, text++) && cnt<=max);
+        if (cnt++>=rep->min && reg_match_here(pat, text, rm_ep)) ret = 1;   //最短一致ならここでreturn 1する
+    } while (reg_match_pat(c, text, &len) && (text=text+len) && cnt<=max);
     return ret;
 }
 
 void reg_compile_free(reg_compile_t* preg_compile) {
-    if (preg_compile) {
+    if (preg_compile==NULL) return;
+    array_t *array = preg_compile->array;
+    if (array) {
+        for (int i=0; i<array->num; i++) {
+            reg_pattern_free(array->buckets[i]);
+        }
         free_array(preg_compile->array);
-        free(preg_compile);
+    } 
+    free(preg_compile);
+}
+
+static void reg_pattern_free(pattern_t *pat) {
+    if (pat==NULL) return;
+    switch (pat->type) {
+    case PAT_CHARSET:
+        free(pat->chars.chars);
+        break;
+    case PAT_SUBREG:
+        reg_compile_free(pat->regcomp);
+        break;
+    default:
+        break;
     }
+    free(pat);
 }

@@ -75,9 +75,12 @@
     TEST_DATA("abc", "[^a]", "b", 0)
     TEST_DATA("aaa", "[^a]", "", 1)
     TEST_DATA("abc", "[^abc]", "", 1)
+    TEST_DATA("abc", "[^]", "", -1)
+    TEST_DATA("^a", "[^^]", "a", 0)
     TEST_DATA("]", "[]]", "]", 0)
     TEST_DATA("-", "[-]", "-", 0)
     TEST_DATA("-", "[a-]", "-", 0)
+    TEST_DATA("-]", "[]-]*", "-]", 0)
     TEST_DATA("abc", "[a-c]", "a", 0)
     TEST_DATA("abc", "[c-a]", "", -1)    //Error
     TEST_DATA("abc", "[a-a]", "a", 0)
@@ -113,8 +116,16 @@
     TEST_DATA("abc", ".\\{3\\}", "abc", 0)
     TEST_DATA("abc", ".\\{4\\}", "", 1)
 
-#if 0
     TEST_DATA("abc", "\\(a\\)", "a", 0)
+    TEST_DATA("abc", "\\(c\\)", "c", 0)
     TEST_DATA("abc", "\\(abc\\)", "abc", 0)
+    TEST_DATA("abc", "^\\(a\\)", "a", 0)
+    TEST_DATA("abc", "\\(c\\)$", "c", 0)
+    TEST_DATA("abc", "^\\(abc\\)$", "abc", 0)
     TEST_DATA("abc", "\\(a", "", -1)
-#endif
+    TEST_DATA("abc", "\\([bc]\\)", "b", 0)
+    TEST_DATA("abc", "a\\([bc]*\\)", "abc", 0)
+    TEST_DATA("abc", "a\\([bc]\\)*", "abc", 0)
+    TEST_DATA("abc", "\\(a\\)\\(bc\\)", "abc", 0)
+    TEST_DATA("abc", "\\(...\\)", "abc", 0)
+    TEST_DATA("abc", "\\([a-z]\\{1,3\\}\\)", "abc", 0)
