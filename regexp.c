@@ -349,25 +349,9 @@ static int reg_match_here(pattern_t **pat, const char *text, const char **rm_ep)
     }
     if (pat[1]->type==PAT_REPEAT)
         return reg_match_repeat(pat[0], pat[1], pat+2, text, rm_ep);
-    switch (pat[0]->type) {
-    case PAT_CHAR:
-    case PAT_CHARSET:
-    case PAT_DOT:
-    case PAT_SUBREG:
-    {
-        int len;
-        if (reg_match_pat(pat[0], text, &len))
-            return reg_match_here(pat+1, text+len,rm_ep);
-        else return 0;
-    }
-    case PAT_END:
-        if (*text=='\0') {
-            *rm_ep = text;
-            return 1;
-        } else return 0;
-    default:
-        return 0;
-    }
+    int len;
+    if (reg_match_pat(pat[0], text, &len))
+        return reg_match_here(pat+1, text+len, rm_ep);
     return 0;
 }
 
@@ -393,6 +377,12 @@ static int reg_match_pat(pattern_t *pat, const char *text, int *len) {
         }
         return 0;
     }
+    case PAT_END:
+        if (*text=='\0') {
+            *len = 0;
+            return 1;
+        }
+        return 0;
     default:
         return 0;
     }
