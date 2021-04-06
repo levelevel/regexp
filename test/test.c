@@ -20,7 +20,7 @@ static int test_regexp(test_t *test_data) {
     int n = test_data->no;
     const char *text = test_data->text;
     const char *regexp = test_data->regexp;
-    regex_t preg;
+    regex_t preg = {0};
     reg_compile_t *preg_compile;
     int errcode;
     int ret1, ret2; //1:一致、0:不一致、-1:エラー

@@ -129,3 +129,7 @@
     TEST_DATA("abc", "\\(a\\)\\(bc\\)", "abc", 0)
     TEST_DATA("abc", "\\(...\\)", "abc", 0)
     TEST_DATA("abc", "\\([a-z]\\{1,3\\}\\)", "abc", 0)
+
+//    TEST_DATA("abc", "[[:alpha:]]*", "abc", 0)
+    TEST_DATA("abc", "[:alpha:]*", "a", 0)
+//    TEST_DATA("abc", "[[:Alpha:]]*", "a", 0)
