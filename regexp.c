@@ -17,8 +17,8 @@
 //              = "$"                                                           ERB
 // char_set     = char char_set*                                            BRE/ERB
 //              | char "-" char
-//              | "[:" class_class ":]"
-// class_class  = "upper"       #[A-Z]                                      POSIX
+//              | "[:" char_class ":]"
+// char_class   = "upper"       #[A-Z]                                      POSIX
 //              | "lower"       #[a-z]                                      POSIX
 //              | "alpha"       #[A-Za-z]                                   POSIX
 //              | "alnum"       #[A-Za-z0-9]                                POSIX
@@ -61,7 +61,8 @@ typedef enum {
 
 //[s], [^s]を格納する文字セット
 typedef struct {
-    int reverse;
+    char reverse;       //否定 [^...]
+    unsigned int size;  //charsのバッファサイズ
     char *chars;
 } char_set_t;
 
@@ -72,7 +73,7 @@ typedef struct {
     pattern_type_t  type;
     union {
         char        c;      //type=PAT_CHAR
-        char_set_t  chars;  //type=PAT_CHARSET
+        char_set_t  cset;  //type=PAT_CHARSET
         struct {
             int min, max;   //type=PAT_REPEAT
         };
@@ -98,6 +99,7 @@ typedef struct regcomp {
 } reg_compile_t;
 
 //reg_err_code/reg_err_msg: regex関数から流用
+// 4    Invalid character class name
 // 7    Unmatched [, [^, [:, [., or [=
 // 8    Unmatched \\(
 // 9    Unmatched \\{
@@ -107,6 +109,8 @@ typedef struct regcomp {
 int reg_err_code = 0;           //エラーコード
 const char *reg_err_msg = "";   //エラーメッセージ
 
+static void push_char_set(char_set_t *char_set, char c);
+static void push_char_set_str(char_set_t *char_set, const char *str);
 static pattern_t *new_pattern(pattern_type_t type);
 static reg_compile_t *new_reg_compile(const char *regexp);
 static reg_compile_t *reg_exp(const char *regexp);
@@ -115,6 +119,7 @@ static reg_stat_t repeat_exp  (reg_compile_t *preg_compile);
 static reg_stat_t primary_exp (reg_compile_t *preg_compile);
 static reg_stat_t new_repeat  (reg_compile_t *preg_compile);
 static reg_stat_t new_char_set(reg_compile_t *preg_compile);
+static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_set);
 static reg_stat_t new_subreg  (reg_compile_t *preg_compile);
 
 static int reg_match_here(pattern_t **pat, const char *text, const char **rm_ep);
@@ -138,6 +143,31 @@ reg_compile_t* reg_compile(const char *regexp) {
     }
 
     return preg_compile;
+}
+
+//push_char_set: 文字セットに文字を追加する。
+static void push_char_set(char_set_t *char_set, char c) {
+    assert(char_set);
+    size_t len = strlen(char_set->chars);
+    if (len+1>=char_set->size) {
+        char_set->size *= 2;
+        char_set->chars = realloc(char_set->chars, char_set->size*sizeof(char));
+        assert(char_set->chars);
+    }
+    char_set->chars[len++] = c;
+    char_set->chars[len] = '\0';
+}
+//push_char_set_str: 文字セットに文字列を追加する。
+static void push_char_set_str(char_set_t *char_set, const char *str) {
+    assert(char_set);
+    size_t len1 = strlen(char_set->chars);
+    size_t len2 = strlen(str);
+    if (len1+len2>=char_set->size) {
+        while (len1+len2>=char_set->size) char_set->size *= 2;
+        char_set->chars = realloc(char_set->chars, char_set->size*sizeof(char));
+        assert(char_set->chars);
+    }
+    strcat(char_set->chars+len1, str);
 }
 
 // new_pattern: allocate new pattern for the type
@@ -360,16 +390,14 @@ static reg_stat_t new_repeat(reg_compile_t *preg_compile) {
     return REG_OK;
 }
 
-// new_char_set: 文字セットを生成する
-//入力：regexp="[...]"
+// new_char_set: 文字セットを生成する。入力："[...]"
 static reg_stat_t new_char_set(reg_compile_t *preg_compile) {
     pattern_t *pat = new_pattern(PAT_CHARSET);
     const char *regexp = preg_compile->p;
     assert(*regexp == '[');
-    int chars_len = 256;
-    int pos = 0;
-    char_set_t *char_class = &pat->chars;
-    char_class->chars = calloc(chars_len, sizeof(char));
+    char_set_t *char_set = &pat->cset;
+    char_set->size = 256;
+    char_set->chars = calloc(char_set->size, sizeof(char));
 
     regexp++;
     if (*regexp == '^') {
@@ -379,11 +407,11 @@ static reg_stat_t new_char_set(reg_compile_t *preg_compile) {
             reg_err_msg = "Unmatched [, [^, [:, [., or [=";
             return REG_ERR;
         }
-        char_class->reverse = 1;
+        char_set->reverse = 1;
         regexp++;
     }
     if (*regexp == ']' || *regexp == '-') {
-        char_class->chars[pos++] = *regexp;
+        push_char_set(char_set, *regexp);
         regexp++;
     }
     for (; *regexp != '\0'; regexp++) {
@@ -395,18 +423,110 @@ static reg_stat_t new_char_set(reg_compile_t *preg_compile) {
                 return REG_ERR;
             }
             for (int c=regexp[-1]+1; c<regexp[1]; c++) {
-                char_class->chars[pos++] = c;
+                push_char_set(char_set, c);
             }
-            char_class->chars[pos++] = regexp[1];
+            push_char_set(char_set, regexp[1]);
             regexp++;
+        } else if (*regexp == '[' && regexp[1]==':') {
+            preg_compile->p = regexp;
+            if (set_char_class(preg_compile, char_set)==REG_ERR) {
+                reg_pattern_free(pat);
+                return REG_ERR;
+            }
+            regexp = preg_compile->p-1;
         } else if (*regexp != ']') {
-            char_class->chars[pos++] = *regexp;
+            push_char_set(char_set, *regexp);
         } else {
             regexp++;
             break;
         }
     }
     push_array(preg_compile->array, pat);
+    preg_compile->p = regexp;
+    return REG_OK;
+}
+
+// new_char_class: 文字クラスを設定する。入力："[:...:]"
+// char_class   = "upper"       #[A-Z]                                      POSIX
+//              | "lower"       #[a-z]                                      POSIX
+//              | "alpha"       #[A-Za-z]                                   POSIX
+//              | "alnum"       #[A-Za-z0-9]                                POSIX
+//              | "word"        #[A-Za-z0-9_]                           
+//              | "digit"       #[0-9]                                      POSIX
+//              | "xdigit"      #[0-9A-Fa-f]                                POSIX
+//              | "punct"       #[]!"#$%&'()*+,-./:;<=>?@[\^_`{|}~-]        POSIX
+//              | "blank"       #[ \t]                                      POSIX
+//              | "space"       #[ \t\n\r\f\v]                              POSIX
+//              | "cntrl"       #0x00-0x1f, 0x7f                            POSIX
+//              | "graph"       #[^ \t\n\r\f\v[:cntrl:]]                    POSIX
+//              | "print"       #[^\t\n\r\f\v[:cntrl:]]                     POSIX
+static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_set) {
+    const char *regexp = preg_compile->p;
+    assert(strncmp(regexp, "[:", 2)==0);
+    regexp += 2;
+    if        (strncmp(regexp, "upper", 5)==0) {
+        for (int c='A'; c<='Z'; c++) push_char_set(char_set, c);
+        regexp += 5;
+    } else if (strncmp(regexp, "lower", 5)==0) {
+        for (int c='a'; c<='z'; c++) push_char_set(char_set, c);
+        regexp += 5;
+    } else if (strncmp(regexp, "alpha", 5)==0) {
+        for (int c='A'; c<='Z'; c++) push_char_set(char_set, c);
+        for (int c='a'; c<='z'; c++) push_char_set(char_set, c);
+        regexp += 5;
+    } else if (strncmp(regexp, "alnum", 5)==0) {
+        for (int c='A'; c<='Z'; c++) push_char_set(char_set, c);
+        for (int c='a'; c<='z'; c++) push_char_set(char_set, c);
+        for (int c='0'; c<='9'; c++) push_char_set(char_set, c);
+        regexp += 5;
+    } else if (strncmp(regexp, "word", 4)==0) {
+        for (int c='A'; c<='Z'; c++) push_char_set(char_set, c);
+        for (int c='a'; c<='z'; c++) push_char_set(char_set, c);
+        for (int c='0'; c<='9'; c++) push_char_set(char_set, c);
+        push_char_set(char_set, '_');
+        regexp += 4;
+    } else if (strncmp(regexp, "digit", 5)==0) {
+        for (int c='0'; c<='9'; c++) push_char_set(char_set, c);
+        regexp += 5;
+    } else if (strncmp(regexp, "xdigit", 6)==0) {
+        for (int c='0'; c<='9'; c++) push_char_set(char_set, c);
+        for (int c='A'; c<='F'; c++) push_char_set(char_set, c);
+        for (int c='a'; c<='f'; c++) push_char_set(char_set, c);
+        regexp += 6;
+    } else if (strncmp(regexp, "punct", 5)==0) {
+        push_char_set_str(char_set, "#[]!\"#$%&'()*+,-./:;<=>?@[\\^_`{|}~-]");
+        regexp += 5;
+    } else if (strncmp(regexp, "blanc", 5)==0) {
+        push_char_set_str(char_set, " \t");
+        regexp += 5;
+    } else if (strncmp(regexp, "space", 5)==0) {
+        push_char_set_str(char_set, " \t\n\r\f\v");
+        regexp += 5;
+    } else if (strncmp(regexp, "cntrl", 5)==0) {
+        for (int c=0x01; c<=0x1f; c++) push_char_set(char_set, c);    //0x00は除外
+        push_char_set(char_set, 0x7f);
+        regexp += 5;
+    } else if (strncmp(regexp, "graph", 5)==0) {
+        char_set->reverse = 1;
+        push_char_set_str(char_set, " \t\n\r\f\v");
+        for (int c=0x01; c<=0x1f; c++) push_char_set(char_set, c);    //0x00は除外
+        regexp += 5;
+    } else if (strncmp(regexp, "print", 5)==0) {
+        char_set->reverse = 1;
+        push_char_set_str(char_set, "\t\n\r\f\v");
+        for (int c=0x01; c<=0x1f; c++) push_char_set(char_set, c);    //0x00は除外
+        regexp += 5;
+    } else {
+        reg_err_code = 4;
+        reg_err_msg = "Invalid character class name";
+        return REG_ERR;
+    }
+    if (*regexp!=':' || regexp[1]!=']') {
+            reg_err_code = 7;
+            reg_err_msg = "Unmatched [, [^, [:, [., or [=";
+        return REG_ERR;
+    }
+    regexp +=2;
     preg_compile->p = regexp;
     return REG_OK;
 }
@@ -467,9 +587,9 @@ static int reg_match_pat(pattern_t *pat, const char *text, int *len) {
         return pat->c == *text;
     case PAT_CHARSET:
         if (*text == '\0') return 0;
-        if (strchr(pat->chars.chars, *text))
-            return !pat->chars.reverse;
-        return pat->chars.reverse;
+        if (strchr(pat->cset.chars, *text))
+            return !pat->cset.reverse;
+        return pat->cset.reverse;
     case PAT_DOT:
         return *text != '\0';
     case PAT_SUBREG:
@@ -522,7 +642,7 @@ static void reg_pattern_free(pattern_t *pat) {
     if (pat==NULL) return;
     switch (pat->type) {
     case PAT_CHARSET:
-        free(pat->chars.chars);
+        free(pat->cset.chars);
         break;
     case PAT_SUBREG:
         reg_compile_free(pat->regcomp);
