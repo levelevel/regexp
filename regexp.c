@@ -52,6 +52,7 @@
 typedef enum {
     PAT_CHAR=1, // c
     PAT_CHARSET,// [s] [^s]
+    PAT_STR,
     PAT_DOT,    // .
     PAT_REPEAT, // *, \{m,n\}
     PAT_SUBREG, // \(r\)
@@ -61,7 +62,7 @@ typedef enum {
 } pattern_type_t;
 
 static const char *pattern_type_str[] = {
-    "0", "PAT_CHAR", "PAT_CHARSET", "PAT_DOT", "PAT_REPEAT", "PAT_SUBREG", "PAT_OR", "PAT_DOLLAR", "PAT_NULL"
+    "0", "PAT_CHAR", "PAT_CHARSET", "PAT_STR", "PAT_DOT", "PAT_REPEAT", "PAT_SUBREG", "PAT_OR", "PAT_DOLLAR", "PAT_NULL"
 };
 
 //[s], [^s]を格納する文字セット
@@ -79,6 +80,7 @@ typedef struct {
     union {
         char        c;      //type=PAT_CHAR
         char_set_t  cset;   //type=PAT_CHARSET
+        char *str;          //type==PAT_STR
         struct {
             int min, max;   //type=PAT_REPEAT
         };
@@ -137,6 +139,7 @@ void reg_dump(FILE *fp, reg_compile_t *preg_compile, int indent) {
 //10    Invalid content of \{\}
 //11    Invalid range end
 //13    Invalid preceding regular expression
+//15    Regular expression too big
 int reg_err_code = 0;           //エラーコード
 const char *reg_err_msg = "";   //エラーメッセージ
 
@@ -281,7 +284,7 @@ static reg_stat_t repeat_exp(reg_compile_t *preg_compile) {
     if (preg_compile->p[0]=='*') {
         pat = new_pattern(PAT_REPEAT);
         pat->min = 0;
-        pat->max = -1;
+        pat->max = RE_DUP_MAX;
         push_array(preg_compile->array, pat);
         preg_compile->p++;
     } else if (preg_compile->p[0]=='\\' && preg_compile->p[1]=='{') {
@@ -415,15 +418,21 @@ static reg_stat_t new_repeat(reg_compile_t *preg_compile) {
             break;
         }
     }
-    if (mode<3) {           //閉じカッコナシ
+    if (max<0) max = RE_DUP_MAX;
+    if (mode<3) {           //閉じカッコ無し
         reg_pattern_free(pat);
         reg_err_code = 9;
         reg_err_msg = "Unmatched \\{";
         return REG_ERR;
-    } else if (mode==10 || (max>0 && min>max)) {
+    } else if (mode==10 || min>max) {
         reg_pattern_free(pat);
         reg_err_code = 10;
         reg_err_msg = "Invalid content of \\{\\}";
+        return REG_ERR;
+    } else if (max>RE_DUP_MAX) {
+        reg_pattern_free(pat);
+        reg_err_code = 15;
+        reg_err_msg = "Regular expression too big";
         return REG_ERR;
     }
     pat->min = min;
@@ -669,13 +678,12 @@ static int reg_match_pat(pattern_t *pat, const char *text, int *len) {
 // reg_match_repeat: search for c\{m,n\} regexp at beginning of text
 static int reg_match_repeat(pattern_t *c, pattern_t *rep, pattern_t **pat, const char *text, const char **rm_ep) {
     assert(rep->type==PAT_REPEAT);
-    int max = rep->max<0?999:rep->max;
     int cnt = 0;
     int ret = 0;
     int len;
     do {    /* a \{0,n\} matches zero or more instances */
         if (cnt++>=rep->min && reg_match_here(pat, text, rm_ep)) ret = 1;   //最短一致ならここでreturn 1する
-    } while (reg_match_pat(c, text, &len) && (text=text+len) && cnt<=max);
+    } while (reg_match_pat(c, text, &len) && (text=text+len) && cnt<=rep->max);
     return ret;
 }
 

@@ -2,6 +2,10 @@
 
 #include <regex.h>
 
+#define RE_DUP_MAX 255
+//#define RE_DUP_MAX 0x7fff //regexライブラリの最大値(32767)。
+                            //\(1,32767\)をコンパイルするとメモリ2GB以上消費する。
+
 typedef struct regcomp reg_compile_t;
 
 extern int reg_err_code;        //エラーコード

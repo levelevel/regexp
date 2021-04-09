@@ -114,6 +114,7 @@
     TEST_DATA("abc", "a\\{,1\\}", "a", 0)
     TEST_DATA("abc", "\\}", "", 1)
     TEST_DATA("{",   "\\{", "", -1)
+    TEST_DATA("abc", "a\\{32768\\}", "a", -1)
 
     TEST_DATA("abc", "[a-z]\\{3\\}", "abc", 0)
     TEST_DATA("abc", "[a-z]\\{4\\}", "", 1)
