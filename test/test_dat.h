@@ -50,6 +50,7 @@
 
     TEST_DATA("abc  xyz", "abc *xyz", "abc  xyz", 0)
     TEST_DATA("*", "*", "*", 0)
+    TEST_DATA("*", "^*", "*", 0)
     TEST_DATA("**", "**", "**", 0)
 
     TEST_DATA("a*c", "\\*", "*", 0)
@@ -61,9 +62,12 @@
     TEST_DATA("a..c", "a\\.\\.c", "a..c", 0)
     TEST_DATA("a$c", "a\\$", "a$", 0)
     TEST_DATA("a$c", "c\\$", "", 1)
+    TEST_DATA("a$c", "a$c", "a$c", 0)               //BREでは$は最後だけ特殊な意味を持つ
+    TEST_DATA("$bc", "$b", "$b", 0)                 //BREでは$は最後だけ特殊な意味を持つ
     TEST_DATA("\\abc", "\\a", "a", 0)
     TEST_DATA("^abc", "^a", "", 1)
     TEST_DATA("a^bc", "\\^b", "^b", 0)
+    TEST_DATA("a^bc", "a^b", "a^b", 0)              //BREでは^は最初だけ特殊な意味を持つ
     TEST_DATA("abc", "a**", "", -1)
     TEST_DATA("abc", ".*", "abc", 0)
     TEST_DATA("abc", "a.*", "abc", 0)
@@ -108,6 +112,8 @@
     TEST_DATA("abc", "a\\{0\\}", "",0)
     TEST_DATA("abc", "a\\{0,0\\}", "", 0)
     TEST_DATA("abc", "a\\{,1\\}", "a", 0)
+    TEST_DATA("abc", "\\}", "", 1)
+    TEST_DATA("{",   "\\{", "", -1)
 
     TEST_DATA("abc", "[a-z]\\{3\\}", "abc", 0)
     TEST_DATA("abc", "[a-z]\\{4\\}", "", 1)
@@ -129,7 +135,19 @@
     TEST_DATA("abc", "\\(a\\)\\(bc\\)", "abc", 0)
     TEST_DATA("abc", "\\(...\\)", "abc", 0)
     TEST_DATA("abc", "\\([a-z]\\{1,3\\}\\)", "abc", 0)
-
+    TEST_DATA("abc", "\\)", "", -1)
+    TEST_DATA("abc", "\\(^a\\)b", "ab", 0)
+    TEST_DATA("0abc", "\\(^a\\)b", "", 1)
+    TEST_DATA("abc", "b\\(c$\\)", "bc", 0)
+    TEST_DATA("abcd", "b\\(c$\\)", "", 1)
+    TEST_DATA("abc", "\\(^abc$\\)", "abc", 0)
+    TEST_DATA("abcd", "\\(^abc$\\)", "", 1)
+    TEST_DATA("abcd", "\\(^abc$\\)d", "", 1)
+    TEST_DATA("abc", "\\(^[abc]*$\\)", "abc", 0)
+    TEST_DATA("abc", "\\(\\(abc\\)\\)", "abc", 0)
+    TEST_DATA("abc", "\\(a\\(b\\)c\\)", "abc", 0)
+    TEST_DATA("abcabc", "\\(a\\(b\\)c\\)*", "abcabc", 0)
+ 
     TEST_DATA("XYZ123_", "[[:upper:]]*", "XYZ", 0)
     TEST_DATA("abcXYZ123_", "[[:upper:][:lower:]]*", "abcXYZ", 0)
     TEST_DATA("abcXYZ123_", "[[:alpha:]]*", "abcXYZ", 0)

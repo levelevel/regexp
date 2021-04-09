@@ -1,21 +1,22 @@
 // reg_exp      = sequence_exp ( "|" sequence_exp )*                            ERE
 //              | "^"? sequence_exp* "$"?                                   BRE
-// sequence_exp = repeat_exp*                                               BRE/ERB
+// sequence_exp = repeat_exp*                                               BRE/ERE
 // repeat_exp   = primary_exp ( "*" | "\{" repeat_range "\}" )?             BRE
-//              | primary_exp ( "*" | "*" | "?" | "{" repeat_range "}" )?       ERB
-// repeat_range = num                                                       BRE/ERB
+//              | primary_exp ( "*" | "*" | "?" | "{" repeat_range "}" )?       ERE
+// repeat_range = num                                                       BRE/ERE
 //              | num? "," num
 //              | num "," num?
-// primary_exp  = char                                                      BRE/ERB
-//              = "."                                                       BRE/ERB
-//              | "\" special_char                                          BRE/ERB
-//              | "[" char_set "]"                                          BRE/ERB
-//              | "[^" char_set "]"                                         BRE/ERB
+// primary_exp  = char                                                      BRE/ERE
+//              = "."                                                       BRE/ERE
+//              | "\" special_char                                          BRE/ERE
+//              | "[" char_set "]"                                          BRE/ERE
+//              | "[^" char_set "]"                                         BRE/ERE
 //              | "\(" reg_exp "\)"                                         BRE
 //              | "(" reg_exp ")"                                               ERE
-//              = "^"                                                           ERB
-//              = "$"                                                           ERB
-// char_set     = char char_set*                                            BRE/ERB
+//              | "\" ( "1" | ... | "9" )                                   BRE
+//              = "^"                                                           ERE
+//              = "$"                                                           ERE
+// char_set     = char char_set*                                            BRE/ERE
 //              | char "-" char
 //              | "[:" char_class ":]"
 // char_class   = "upper"       #[A-Z]                                      POSIX
@@ -49,15 +50,19 @@
 
 //パターンタイプ
 typedef enum {
-    PAT_CHAR,   // c
+    PAT_CHAR=1, // c
     PAT_CHARSET,// [s] [^s]
     PAT_DOT,    // .
     PAT_REPEAT, // *, \{m,n\}
     PAT_SUBREG, // \(r\)
     PAT_OR,     // |
-    PAT_END,    // $
+    PAT_DOLLAR, // $
     PAT_NULL,   //パターンの終わり
 } pattern_type_t;
+
+static const char *pattern_type_str[] = {
+    "0", "PAT_CHAR", "PAT_CHARSET", "PAT_DOT", "PAT_REPEAT", "PAT_SUBREG", "PAT_OR", "PAT_DOLLAR", "PAT_NULL"
+};
 
 //[s], [^s]を格納する文字セット
 typedef struct {
@@ -73,7 +78,7 @@ typedef struct {
     pattern_type_t  type;
     union {
         char        c;      //type=PAT_CHAR
-        char_set_t  cset;  //type=PAT_CHARSET
+        char_set_t  cset;   //type=PAT_CHARSET
         struct {
             int min, max;   //type=PAT_REPEAT
         };
@@ -91,19 +96,45 @@ typedef enum {
 
 //正規表現のコンパイル結果
 typedef struct regcomp {
-    array_t *array;
-    char match_begin;       //^
-    char match_end;         //$
+    array_t *array;         //pattern_t*のアレイ
+    unsigned int match_begin:1;     //^
+    unsigned int match_end  :1;     //$
+    unsigned int match_here :1;     //現在位置からマッチさせる
     const char *regexp;     //元の正規表現
     const char *p;          //regexpを指す作業ポインタ
+    pattern_type_t mode;    //処理中のパターン（PAT_SUBREG:"\)"が終了）
 } reg_compile_t;
+
+void reg_dump(FILE *fp, reg_compile_t *preg_compile, int indent) {
+    fprintf(stderr, "%*s", indent, ""); // indent個の空白を出力
+    if (preg_compile==NULL) {
+        fprintf(stderr, "preg_compile=(nul)\n");
+        return;
+    }
+    fprintf(fp, "regexp='%s', match_begin=%d, match_end=%d, match_here=%d\n",
+        preg_compile->regexp, preg_compile->match_begin, preg_compile->match_end, preg_compile->match_here);
+    array_t *array = preg_compile->array;
+    for (int i=0; i<array->num; i++) {
+        pattern_t *pat = array->buckets[i];
+        fprintf(stderr, "%*s", indent, ""); // indent個の空白を出力
+        fprintf(fp, "%2d: type=%-11s: ", i, pattern_type_str[pat->type]);
+        switch (pat->type) {
+        case PAT_CHAR:    fprintf(fp, "'%c'\n", pat->c); break;
+        case PAT_CHARSET: fprintf(fp, "%s[%s]\n", pat->cset.reverse?"^":"", pat->cset.chars); break;
+        case PAT_REPEAT:  fprintf(fp, "{%d,%d}\n", pat->min, pat->max); break;
+        case PAT_SUBREG:  fprintf(fp, "\n");
+                          reg_dump(fp, pat->regcomp, indent+2); break;
+        default:          fprintf(fp, "\n"); break;
+        }
+    }
+}
 
 //reg_err_code/reg_err_msg: regex関数から流用
 // 4    Invalid character class name
 // 7    Unmatched [, [^, [:, [., or [=
-// 8    Unmatched \\(
-// 9    Unmatched \\{
-//10    Invalid content of \\{\\}
+// 8    Unmatched ( or \(
+// 9    Unmatched \{
+//10    Invalid content of \{\}
 //11    Invalid range end
 //13    Invalid preceding regular expression
 int reg_err_code = 0;           //エラーコード
@@ -113,7 +144,7 @@ static void push_char_set(char_set_t *char_set, char c);
 static void push_char_set_str(char_set_t *char_set, const char *str);
 static pattern_t *new_pattern(pattern_type_t type);
 static reg_compile_t *new_reg_compile(const char *regexp);
-static reg_compile_t *reg_exp(const char *regexp);
+static reg_compile_t *reg_exp(const char *regexp, pattern_type_t mode);
 static reg_stat_t sequence_exp(reg_compile_t *preg_compile);
 static reg_stat_t repeat_exp  (reg_compile_t *preg_compile);
 static reg_stat_t primary_exp (reg_compile_t *preg_compile);
@@ -122,6 +153,7 @@ static reg_stat_t new_char_set(reg_compile_t *preg_compile);
 static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_set);
 static reg_stat_t new_subreg  (reg_compile_t *preg_compile);
 
+static int reg_exec_main(reg_compile_t *preg_compile, const char *text, size_t nmatch, regmatch_t *pmatch);
 static int reg_match_here(pattern_t **pat, const char *text, const char **rm_ep);
 static void set_match(regmatch_t *pmatch, const char *text_org, const char *rm_sp, const char *rm_ep);
 static int reg_match_pat(pattern_t *pat, const char *text, int *len);
@@ -131,16 +163,13 @@ static void reg_pattern_free(pattern_t *pat);
 // reg_compile: compile regexp
 // reg_exp      = sequence_exp ( "|" sequence_exp )*                            ERE
 //              | "^"? sequence_exp* "$"?                                   BRE
-// sequence_exp = repeat_exp repeat_exp*                                    BRE/ERB
+// sequence_exp = repeat_exp repeat_exp*                                    BRE/ERE
 reg_compile_t* reg_compile(const char *regexp) {
     reg_err_code = 0;
     reg_err_msg = "";
     reg_compile_t *preg_compile;
 
-    preg_compile = reg_exp(regexp);
-    if (preg_compile) {
-        push_array(preg_compile->array, new_pattern(PAT_NULL));
-    }
+    preg_compile = reg_exp(regexp, 0);
 
     return preg_compile;
 }
@@ -189,46 +218,58 @@ static reg_compile_t *new_reg_compile(const char *regexp) {
 
 // reg_exp      = sequence_exp ( "|" sequence_exp )*                            ERE
 //              | "^"? sequence_exp* "$"?                                   BRE
-// sequence_exp = repeat_exp repeat_exp*                                    BRE/ERB
+// sequence_exp = repeat_exp repeat_exp*                                    BRE/ERE
 //戻り値：エラー時はNULLを返し、reg_err_code/reg_err_msgにエラー情報を設定する。
-static reg_compile_t *reg_exp(const char *regexp) {
+static reg_compile_t *reg_exp(const char *regexp, pattern_type_t mode) {
     reg_compile_t *preg_compile = new_reg_compile(regexp);
     if (preg_compile==NULL) return NULL;
+    preg_compile->mode = mode;
 
     if (*preg_compile->p=='^') {
         preg_compile->match_begin = 1;
+        preg_compile->match_here = 1;
         preg_compile->p++;
     }
-    if (sequence_exp(preg_compile)==REG_ERR) {
+    reg_stat_t ret = sequence_exp(preg_compile);
+    if (ret==REG_ERR) {
         reg_compile_free(preg_compile);
         return NULL;
-    }
-    if (preg_compile->p[0]=='$' && preg_compile->p[1]=='\0') {
-        preg_compile->match_end = 1;
-        push_array(preg_compile->array, new_pattern(PAT_END));
-    } else if (preg_compile->p[0]!='\0') {
-        reg_err_code = 99;
-        reg_err_msg = "Invalid regular expression";
-        reg_compile_free(preg_compile);
-        return NULL;
+    } else if (ret==REG_END) {
+        if (preg_compile->p[0]=='$') {
+            preg_compile->match_end = 1;
+            push_array(preg_compile->array, new_pattern(PAT_DOLLAR));
+            preg_compile->p++;
+        }
+        if (preg_compile->mode==PAT_SUBREG) {
+            assert(preg_compile->p[0]=='\\');
+            assert(preg_compile->p[1]==')');
+            preg_compile->p += 2;
+        } else {
+            assert(*preg_compile->p=='\0');
+        }
+    } else {
+        assert(0);
     }
 
+    push_array(preg_compile->array, new_pattern(PAT_NULL));
     return preg_compile;
 }
 
-// sequence_exp = repeat_exp*                                               BRE/ERB
+// sequence_exp = repeat_exp*                                               BRE/ERE
 // repeat_exp   = primary_exp ( "*" | "\{" repeat_range "\}" )?             BRE
-//              | primary_exp ( "*" | "*" | "?" | "{" repeat_range "}" )?       ERB
+//              | primary_exp ( "*" | "*" | "?" | "{" repeat_range "}" )?       ERE
 //戻り値：エラー時はreg_err_code/reg_err_msgにエラー情報を設定する。
 static reg_stat_t sequence_exp(reg_compile_t *preg_compile) {
-    reg_stat_t ret;
-    while ((ret=repeat_exp(preg_compile))==REG_OK);
+    reg_stat_t ret = REG_OK;
+    while (ret==REG_OK) {
+        ret = repeat_exp(preg_compile);
+    }
     return ret;
 }
 
 // repeat_exp   = primary_exp ( "*" | "\{" repeat_range "\}" )?             BRE
-//              | primary_exp ( "*" | "*" | "?" | "{" repeat_range "}" )?       ERB
-// repeat_range = num                                                       BRE/ERB
+//              | primary_exp ( "*" | "*" | "?" | "{" repeat_range "}" )?       ERE
+// repeat_range = num                                                       BRE/ERE
 //              | num? "," num
 //              | num "," num?
 //戻り値：エラー時はreg_err_code/reg_err_msgにエラー情報を設定する。
@@ -249,24 +290,34 @@ static reg_stat_t repeat_exp(reg_compile_t *preg_compile) {
 
     if (preg_compile->p[0]=='\0' ||
        (preg_compile->p[0]=='$' && preg_compile->p[1]=='\0')) {
+        if (preg_compile->mode==PAT_SUBREG) {
+            reg_err_code = 8;
+            reg_err_msg = "Unmatched ( or \\(";
+            return REG_ERR;
+        }
         return REG_END;
     }
     return REG_OK;
 }
 
-// primary_exp  = char                                                      BRE/ERB
-//              = "."                                                       BRE/ERB
-//              | "\" special_char                                          BRE/ERB
-//              | "[" char_set "]"                                          BRE/ERB
-//              | "[^" char_set "]"                                         BRE/ERB
+// primary_exp  = char                                                      BRE/ERE
+//              = "."                                                       BRE/ERE
+//              | "\" special_char                                          BRE/ERE
+//              | "[" char_set "]"                                          BRE/ERE
+//              | "[^" char_set "]"                                         BRE/ERE
 //              | "\(" reg_exp "\)"                                         BRE
 //              | "(" reg_exp ")"                                               ERE
-//              = "^"                                                           ERB
-//              = "$"                                                           ERB
+//              = "^"                                                           ERE
+//              = "$"                                                           ERE
 static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
     pattern_t *pat = NULL;
     if (preg_compile->p[0]=='\0' ||
        (preg_compile->p[0]=='$' && preg_compile->p[1]=='\0')) {
+        if (preg_compile->mode==PAT_SUBREG) {
+            reg_err_code = 8;
+            reg_err_msg = "Unmatched ( or \\(";
+            return REG_ERR;
+        }
         return REG_END;
     } else if (preg_compile->p[0]=='.') {
         pat = new_pattern(PAT_DOT);
@@ -277,6 +328,11 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
         reg_err_msg = "Invalid preceding regular expression";
     } else if (preg_compile->p[0]=='\\' && preg_compile->p[1]=='(') {
         return new_subreg(preg_compile);
+    } else if ((preg_compile->p[0]=='\\' && preg_compile->p[1]==')') ||
+               (preg_compile->p[0]=='$' && preg_compile->p[1]=='\\' && preg_compile->p[2]==')')) {
+        if (preg_compile->mode==PAT_SUBREG) return REG_END;
+        reg_err_code = 8;
+        reg_err_msg = "Unmatched ( or \\(";
     } else if (preg_compile->p[0]=='\\' /*&& strchr(SPECIAL_CHARS, p[1])*/) {
         pat = new_pattern(PAT_CHAR);
         pat->c = preg_compile->p[1];
@@ -302,36 +358,23 @@ static reg_stat_t new_subreg(reg_compile_t *preg_compile) {
     const char *regexp = preg_compile->p;
     assert(regexp[0] == '\\');
     assert(regexp[1] == '(');
-    
-    regexp += 2;
-    char *p = strstr(regexp, "\\)");
-    if (p==NULL) {
-        reg_pattern_free(pat);
-        reg_err_code = 8;
-        reg_err_msg = "Unmatched \\(";
-        return REG_ERR;
-    }
 
-    int sublen = p-regexp;
-    char *sub_regexp = malloc(sublen+1);
-    strncpy(sub_regexp, regexp, sublen);
-    sub_regexp[sublen] = '\0';
-    pat->regcomp = reg_compile(sub_regexp);
-    free(sub_regexp);
+    regexp += 2;
+    pat->regcomp = reg_exp(regexp, PAT_SUBREG);
     if (pat->regcomp==NULL) {
         reg_pattern_free(pat);
         return REG_ERR;
-    }
-    pat->regcomp->match_begin = 1;
+    } 
+    pat->regcomp->match_here = 1;
     push_array(preg_compile->array, pat);
-    preg_compile->p = p+2;
+    preg_compile->p = pat->regcomp->p;
     return REG_OK;
 }
 
 // new_repeat: 繰り返し条件を生成する
 // repeat_exp   = primary_exp ( "*" | "\{" repeat_range "\}" )?             BRE
-//              | primary_exp ( "*" | "*" | "?" | "{" repeat_range "}" )?       ERB
-// repeat_range = num                                                       BRE/ERB
+//              | primary_exp ( "*" | "*" | "?" | "{" repeat_range "}" )?       ERE
+// repeat_range = num                                                       BRE/ERE
 //              | num? "," num
 //              | num "," num?
 static reg_stat_t new_repeat(reg_compile_t *preg_compile) {
@@ -531,8 +574,17 @@ static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_s
     return REG_OK;
 }
 
+//--------------------------------------------------------------------------------
+
+static const char *start_text;  //検索文字列の開始位置（^にマッチさせる位置）
+
 // reg_exec: search for compiled regexp anywhere in text
 int reg_exec(reg_compile_t *preg_compile, const char *text, size_t nmatch, regmatch_t *pmatch) {
+    start_text = text;
+    return reg_exec_main(preg_compile, text, nmatch, pmatch);
+}
+// reg_exec_main: search for compiled regexp anywhere in text
+static int reg_exec_main(reg_compile_t *preg_compile, const char *text, size_t nmatch, regmatch_t *pmatch) {
     (void)nmatch;
     assert(preg_compile);
     assert(preg_compile->array);
@@ -540,7 +592,8 @@ int reg_exec(reg_compile_t *preg_compile, const char *text, size_t nmatch, regma
     const char *rm_ep;
     pattern_t **pat = (pattern_t**)preg_compile->array->buckets;
     if (pmatch) pmatch->rm_so = pmatch->rm_eo = 0;//-1;
-    if (preg_compile->match_begin) {
+    if (preg_compile->match_here) {
+        if (preg_compile->match_begin && start_text!=text) return 1;
         if (reg_match_here(pat, text, &rm_ep)) {
             set_match(pmatch, text_org, text_org, rm_ep);
             return 0;
@@ -595,13 +648,13 @@ static int reg_match_pat(pattern_t *pat, const char *text, int *len) {
     case PAT_SUBREG:
     {
         regmatch_t pmatch;
-        if (reg_exec(pat->regcomp, text, 1, &pmatch)==0) {
+        if (reg_exec_main(pat->regcomp, text, 1, &pmatch)==0) {
             *len = pmatch.rm_eo - pmatch.rm_so;
             return 1;
         }
         return 0;
     }
-    case PAT_END:
+    case PAT_DOLLAR:
         if (*text=='\0') {
             *len = 0;
             return 1;

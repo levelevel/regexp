@@ -19,6 +19,6 @@ test: $(TEST)
 	$(TEST)
 
 clean:
-	rm -f $(OBJS) $(TEST)
+	rm -f $(OBJS) $(TEST) a.out
 
 .PHONY: clean test

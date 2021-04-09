@@ -59,7 +59,11 @@ static int test_regexp(test_t *test_data) {
             printf("  pmatch1=[%d,%d], pmatch2=[%d,%d], expected_match='%s'\n",
                 pmatch1->rm_so, pmatch1->rm_eo, pmatch2->rm_so, pmatch2->rm_eo, test_data->match);
         }
+        reg_dump(stdout, preg_compile, 2);
         result = 0;
+    } else {
+        //printf("DATA: %d regexp='%s'\n", n, regexp);
+        //reg_dump(stdout, preg_compile, 2);
     }
     if (errcode!=reg_err_code) {
         fprintf(stderr, "%d: regex  Error: regexp='%s', errcode=%d, %s\n", n, regexp, errcode, buf);
@@ -81,6 +85,7 @@ int main(int argc, char **argv) {
     int err_cnt = 0;
     int size = sizeof(data)/sizeof(test_t);
     for (int i=0; i<size; i++) {
+        if (data[i].text==NULL) break;
         if (test_regexp(&data[i])==0) err_cnt++;
     }
     if (err_cnt==0) {
