@@ -65,9 +65,9 @@ static int test_regexp(test_t *test_data) {
         //printf("DATA: %d regexp='%s'\n", n, regexp);
         //reg_dump(stdout, preg_compile, 2);
     }
-    if (errcode!=reg_err_code) {
+    if (errcode!=reg_err_info.err_code) {
         fprintf(stderr, "%d: regex  Error: regexp='%s', errcode=%d, %s\n", n, regexp, errcode, buf);
-        fprintf(stderr, "%d: regexp Error: regexp='%s', errcode=%d, %s\n", n, regexp, reg_err_code, reg_err_msg);
+        fprintf(stderr, "%d: regexp Error: regexp='%s', errcode=%d, %s\n", n, regexp, reg_err_info.err_code, reg_err_info.err_msg);
     }
 
     free(pmatch1);

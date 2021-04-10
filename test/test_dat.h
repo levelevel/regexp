@@ -114,6 +114,7 @@
     TEST_DATA("abc", "a\\{,1\\}", "a", 0)
     TEST_DATA("abc", "\\}", "", 1)
     TEST_DATA("{",   "\\{", "", -1)
+    TEST_DATA("abc", "a\\{0,32768\\}", "a", -1)
     TEST_DATA("abc", "a\\{32768\\}", "a", -1)
 
     TEST_DATA("abc", "[a-z]\\{3\\}", "abc", 0)
@@ -148,12 +149,18 @@
     TEST_DATA("abc", "\\(\\(abc\\)\\)", "abc", 0)
     TEST_DATA("abc", "\\(a\\(b\\)c\\)", "abc", 0)
     TEST_DATA("abcabc", "\\(a\\(b\\)c\\)*", "abcabc", 0)
+    TEST_DATA("aba", "\\(\\)", "", 0)
+    TEST_DATA("aba", "\\(a\\).\\1", "aba", 0)
+    TEST_DATA("ab0", "\\0",         "0", 0)
+    TEST_DATA("aba", "\\1",         "", -1)
+    TEST_DATA("aba", "\\(a\\).\\9", "", -1)
+    TEST_DATA("aba", "\\(a\\1\\).", "", -1)
  
     TEST_DATA("XYZ123_", "[[:upper:]]*", "XYZ", 0)
     TEST_DATA("abcXYZ123_", "[[:upper:][:lower:]]*", "abcXYZ", 0)
     TEST_DATA("abcXYZ123_", "[[:alpha:]]*", "abcXYZ", 0)
     TEST_DATA("abcXYZ123_", "[[:alnum:]]*", "abcXYZ123", 0)
-//  TEST_DATA("abcXYZ123_", "[[:word:]]*", "abcXYZ123_", 0)
+//  TEST_DATA("abcXYZ123_", "[[:word:]]*", "abcXYZ123_", 0) //非POSIX
     TEST_DATA("x123ABCdefx", "x[[:digit:]]*", "x123", 0)
     TEST_DATA("x123ABCdefx", "x[[:xdigit:]]*", "x123ABCdef", 0)
     TEST_DATA("[:-+a]", "[[:punct:]]*", "[:-+", 0)
