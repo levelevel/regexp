@@ -8,6 +8,7 @@
 
 typedef struct regcomp reg_compile_t;
 
+//エラーコードの定義
 typedef enum {
     REG_ERR_CODE_OK = 0,
     REG_ERR_CODE_INVALID_CHAR_CLASS       = 4,
@@ -20,14 +21,16 @@ typedef enum {
     REG_ERR_CODE_INVALID_PRECEDING_REGEXP = 13,
     REG_ERR_CODE_REGEXP_TOO_BIG           = 15,
 } reg_err_code_t;
+
+//エラー情報
 typedef struct {
     reg_err_code_t err_code;    //エラーコード
     const char    *err_msg;     //エラーメッセージ
 } reg_err_info_t;
+
 extern reg_err_info_t reg_err_info; //エラー情報
 
-reg_compile_t* reg_compile(const char *regexp);
+reg_compile_t* reg_compile(const char *regexp, size_t *re_nsub);
 int reg_exec(reg_compile_t *preg_compile, const char *text, size_t nmatch, regmatch_t *pmatch);
 void reg_compile_free(reg_compile_t* preg_compile);
-int match(const char *regexp, const char *text);
 void reg_dump(FILE *fp, reg_compile_t *preg_compile, int indent);

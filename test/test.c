@@ -9,9 +9,11 @@ typedef struct {
     int no;
     const char *text;
     const char *regexp;
-    const char *match;
+    const char *match[10];
+    const int nmatch;
     const int expect;
 } test_t;
+
 test_t data[] = {
     #include "test_dat.h"
 };
@@ -28,39 +30,47 @@ static int test_regexp(test_t *test_data) {
     char buf[1024];
 
     regmatch_t *pmatch1 = NULL;
+    size_t nmatch1;
     errcode = regcomp(&preg, regexp, 0);
     if (errcode!=0) {
         regerror(errcode, &preg, buf, sizeof(buf));
         ret1 = -1;
     } else {
-        size_t nmatch1 = preg.re_nsub+1;
+        nmatch1 = preg.re_nsub+1;
         pmatch1 = calloc(nmatch1, sizeof(regmatch_t));
         ret1 = regexec(&preg, text, nmatch1, pmatch1, 0);
     }
 
     regmatch_t *pmatch2 = NULL;
-    preg_compile = reg_compile(regexp);
+    size_t nmatch2;
+    preg_compile = reg_compile(regexp, &nmatch2);
     if (preg_compile==NULL) {
         ret2 = -1;
     } else {
-        size_t nmatch2 = 1;
+        nmatch2++;
         pmatch2 = calloc(nmatch2, sizeof(regmatch_t));
         ret2 = reg_exec(preg_compile, text, nmatch2, pmatch2);
     }
 
-    int len = strlen(test_data->match);
-    int match_sub = ret1<0 || ret2<0 ||
-        (len==pmatch2->rm_eo-pmatch2->rm_so &&
-        strncmp(test_data->text+pmatch2->rm_so, test_data->match, len)==0 &&
-        pmatch1->rm_so==pmatch2->rm_so && pmatch1->rm_eo==pmatch2->rm_eo);
-    if (ret1 != ret2 || ret1 != test_data->expect || !match_sub) {
-        printf("ERROR: %d: %d:%d text='%s', regexp='%s'\n", n, ret1, ret2, text, regexp);
-        if (!match_sub) {
-            printf("  pmatch1=[%d,%d], pmatch2=[%d,%d], expected_match='%s'\n",
-                pmatch1->rm_so, pmatch1->rm_eo, pmatch2->rm_so, pmatch2->rm_eo, test_data->match);
+    for (int i=0; i<test_data->nmatch; i++) {
+        int len = strlen(test_data->match[i]);
+        int match_sub = ret1<0 || ret2<0 ||
+            (len==pmatch2[i].rm_eo-pmatch2[i].rm_so &&
+            strncmp(test_data->text+pmatch2[i].rm_so, test_data->match[i], len)==0 &&
+            pmatch1[i].rm_so==pmatch2[i].rm_so && pmatch1[i].rm_eo==pmatch2[i].rm_eo);
+        if (ret1 != ret2 || ret1 != test_data->expect || !match_sub || nmatch1!=nmatch2) {
+            printf("ERROR: line=%d[%d]: ret=%d:%d text='%s', regexp='%s', nmatch=%ld:%ld\n", 
+                n, i, ret1, ret2, text, regexp, nmatch1, nmatch2);
+            if (!match_sub) {
+                printf("  pmatch1=[%d,%d], pmatch2=[%d,%d], expected_match='%s'\n",
+                    pmatch1[i].rm_so, pmatch1[i].rm_eo, 
+                    pmatch2[i].rm_so, pmatch2[i].rm_eo, test_data->match[i]);
+            }
+            result = 0;
         }
+    }
+    if (result==0) {
         reg_dump(stdout, preg_compile, 2);
-        result = 0;
     } else {
         //printf("DATA: %d regexp='%s'\n", n, regexp);
         //reg_dump(stdout, preg_compile, 2);

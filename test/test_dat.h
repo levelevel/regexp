@@ -1,173 +1,175 @@
-#define TEST_DATA(text,regexp,match,expect) {__LINE__,text,regexp,match,expect},
-    TEST_DATA("abc", "a", "a", 0)
-    TEST_DATA("abc", "b", "b", 0)
-    TEST_DATA("abc", "c", "c", 0)
-    TEST_DATA("abc", "d", "", 1)
-    TEST_DATA("abc", "ab", "ab", 0)
-    TEST_DATA("abc", "bc", "bc", 0)
-    TEST_DATA("abc", "ac", "", 1)
-    TEST_DATA("abc", "cd", "", 1)
-    TEST_DATA("abc", "abc", "abc", 0)
-    TEST_DATA("abc", "", "", 0)
+//test_t data[] = {
+    {__LINE__, "abc",       "a",                {"a"},              1, 0},
+    {__LINE__, "abc",       "b",                {"b"},              1, 0},
+    {__LINE__, "abc",       "c",                {"c"},              1, 0},
+    {__LINE__, "abc",       "d",                {""},               1, 1},
+    {__LINE__, "abc",       "ab",               {"ab"},             1, 0},
+    {__LINE__, "abc",       "bc",               {"bc"},             1, 0},
+    {__LINE__, "abc",       "ac",               {""},               1, 1},
+    {__LINE__, "abc",       "cd",               {""},               1, 1},
+    {__LINE__, "abc",       "abc",              {"abc"},            1, 0},
+    {__LINE__, "abc",       "",                 {""},               1, 0},
 
-    TEST_DATA("abc", "^a", "a", 0)
-    TEST_DATA("abc", "a$", "", 1)
-    TEST_DATA("abc", "^b", "", 1)
-    TEST_DATA("abc", "b$", "", 1)
-    TEST_DATA("abc", "c$", "c", 0)
-    TEST_DATA("abc", "^ab", "ab", 0)
-    TEST_DATA("abc", "^bc", "", 1)
-    TEST_DATA("abc", "ab$", "", 1)
-    TEST_DATA("abc", "bc$", "bc", 0)
-    TEST_DATA("abc", "^ab$","",  1)
-    TEST_DATA("abc", "^bc$", "", 1)
-    TEST_DATA("abc", "^abc$", "abc", 0)
+    {__LINE__, "abc",       "^a",               {"a"},              1, 0},
+    {__LINE__, "abc",       "a$",               {""},               1, 1},
+    {__LINE__, "abc",       "^b",               {""},               1, 1},
+    {__LINE__, "abc",       "b$",               {""},               1, 1},
+    {__LINE__, "abc",       "c$",               {"c"},              1, 0},
+    {__LINE__, "abc",       "^ab",              {"ab"},             1, 0},
+    {__LINE__, "abc",       "^bc",              {""},               1, 1},
+    {__LINE__, "abc",       "ab$",              {""},               1, 1},
+    {__LINE__, "abc",       "bc$",              {"bc"},             1, 0},
+    {__LINE__, "abc",       "^ab$",             {""},               1, 1},
+    {__LINE__, "abc",       "^bc$",             {""},               1, 1},
+    {__LINE__, "abc",       "^abc$",            {"abc"},            1, 0},
 
-    TEST_DATA("abc", "*", "", 1)
-    TEST_DATA("abc", "a*", "a", 0)
-    TEST_DATA("abc", "aa*", "a", 0)
-    TEST_DATA("aac", "aa*", "aa", 0)
-    TEST_DATA("abc", "ab*c", "abc", 0)
-    TEST_DATA("abc", "b*", "", 0)
-    TEST_DATA("abc", "bc*", "bc", 0)
-    TEST_DATA("abc", "d*", "", 0)
-    TEST_DATA("abc", "^a*", "a", 0)
-    TEST_DATA("abc", "^b*", "", 0)
-    TEST_DATA("abc", "^c*", "", 0)
-    TEST_DATA("abc", "^d*", "", 0)
-    TEST_DATA("abc", "a*$", "", 0)
-    TEST_DATA("aaabbbccc", "aaaa*", "aaa",0)
-    TEST_DATA("aaabbbccc", "ab*", "a", 0)
+    {__LINE__, "abc",       "*",                {""},               1, 1},
+    {__LINE__, "abc",       "a*",               {"a"},              1, 0},
+    {__LINE__, "abc",       "aa*",              {"a"},              1, 0},
+    {__LINE__, "aac",       "aa*",              {"aa"},             1, 0},
+    {__LINE__, "abc",       "ab*c",             {"abc"},            1, 0},
+    {__LINE__, "abc",       "b*",               {""},               1, 0},
+    {__LINE__, "abc",       "bc*",              {"bc"},             1, 0},
+    {__LINE__, "abc",       "d*",               {""},               1, 0},
+    {__LINE__, "abc",       "^a*",              {"a"},              1, 0},
+    {__LINE__, "abc",       "^b*",              {""},               1, 0},
+    {__LINE__, "abc",       "^c*",              {""},               1, 0},
+    {__LINE__, "abc",       "^d*",              {""},               1, 0},
+    {__LINE__, "abc",       "a*$",              {""},               1, 0},
+    {__LINE__, "aaabbbccc", "aaaa*",            {"aaa"},            1, 0},
+    {__LINE__, "aaabbbccc", "ab*",              {"a"},              1, 0},
 
-    TEST_DATA("abc", ".", "a", 0)
-    TEST_DATA("abc", "..", "ab", 0)
-    TEST_DATA("abc", "...", "abc", 0)
-    TEST_DATA("abc", "....", "", 1)
-    TEST_DATA("abc", "^...$", "abc", 0)
-    TEST_DATA("abc", "a.c", "abc", 0)
-    TEST_DATA("abc", "^a.c$", "abc", 0)
-    TEST_DATA("abc", "a..c", "", 1)
+    {__LINE__, "abc",       ".",                {"a"},              1, 0},
+    {__LINE__, "abc",       "..",               {"ab"},             1, 0},
+    {__LINE__, "abc",       "...",              {"abc"},            1, 0},
+    {__LINE__, "abc",       "....",             {""},               1, 1},
+    {__LINE__, "abc",       "^...$",            {"abc"},            1, 0},
+    {__LINE__, "abc",       "a.c",              {"abc"},            1, 0},
+    {__LINE__, "abc",       "^a.c$",            {"abc"},            1, 0},
+    {__LINE__, "abc",       "a..c",             {""},               1, 1},
 
-    TEST_DATA("abc  xyz", "abc *xyz", "abc  xyz", 0)
-    TEST_DATA("*", "*", "*", 0)
-    TEST_DATA("*", "^*", "*", 0)
-    TEST_DATA("**", "**", "**", 0)
+    {__LINE__, "abc  xyz",  "abc *xyz",         {"abc  xyz"},       1, 0},
+    {__LINE__, "*",         "*",                {"*"},              1, 0},
+    {__LINE__, "*",         "^*",               {"*"},              1, 0},
+    {__LINE__, "**",        "**",               {"**"},             1, 0},
 
-    TEST_DATA("a*c", "\\*", "*", 0)
-    TEST_DATA("a*c", "\\*\\*", "", 1)
-    TEST_DATA("a**c", "\\*\\*", "**", 0)
-    TEST_DATA("a**c", "^a\\*\\*c$", "a**c", 0)
-    TEST_DATA("a\\c", "\\\\", "\\", 0)
-    TEST_DATA("a\\b\\c", "\\\\b\\\\", "\\b\\", 0)
-    TEST_DATA("a..c", "a\\.\\.c", "a..c", 0)
-    TEST_DATA("a$c", "a\\$", "a$", 0)
-    TEST_DATA("a$c", "c\\$", "", 1)
-    TEST_DATA("a$c", "a$c", "a$c", 0)               //BREでは$は最後だけ特殊な意味を持つ
-    TEST_DATA("$bc", "$b", "$b", 0)                 //BREでは$は最後だけ特殊な意味を持つ
-    TEST_DATA("\\abc", "\\a", "a", 0)
-    TEST_DATA("^abc", "^a", "", 1)
-    TEST_DATA("a^bc", "\\^b", "^b", 0)
-    TEST_DATA("a^bc", "a^b", "a^b", 0)              //BREでは^は最初だけ特殊な意味を持つ
-    TEST_DATA("abc", "a**", "", -1)
-    TEST_DATA("abc", ".*", "abc", 0)
-    TEST_DATA("abc", "a.*", "abc", 0)
-    TEST_DATA("abc", "a.*c", "abc", 0)
+    {__LINE__, "a*c",       "\\*",              {"*"},              1, 0},
+    {__LINE__, "a*c",       "\\*\\*",           {""},               1, 1},
+    {__LINE__, "a**c",      "\\*\\*",           {"**"},             1, 0},
+    {__LINE__, "a**c",      "^a\\*\\*c$"        , {"a**c"},         1, 0},
+    {__LINE__, "a\\c",      "\\\\",             {"\\"},             1, 0},
+    {__LINE__, "a\\b\\c",   "\\\\b\\\\",        {"\\b\\"},          1, 0},
+    {__LINE__, "a..c",      "a\\.\\.c",         {"a..c"},           1, 0},
+    {__LINE__, "a$c",       "a\\$",             {"a$"},             1, 0},
+    {__LINE__, "a$c",       "c\\$",             {""},               1, 1},
+    {__LINE__, "a$c",       "a$c",              {"a$c"},            1, 0},  //BREでは$は最後だけ特殊な意味を持つ
+    {__LINE__, "$bc",       "$b",               {"$b"},             1, 0},  //BREでは$は最後だけ特殊な意味を持つ
+    {__LINE__, "\\abc",     "\\a",              {"a"},              1, 0},
+    {__LINE__, "^abc",      "^a",               {""},               1, 1},
+    {__LINE__, "a^bc",      "\\^b",             {"^b"},             1, 0},
+    {__LINE__, "a^bc",      "a^b",              {"a^b"},            1, 0},  //BREでは^は最初だけ特殊な意味を持つ
+    {__LINE__, "abc",       "a**",              {""},               1,-1},
+    {__LINE__, "abc",       ".*",               {"abc"},            1, 0},
+    {__LINE__, "abc",       "a.*",              {"abc"},            1, 0},
+    {__LINE__, "abc",       "a.*c",             {"abc"},            1, 0},
 
-    TEST_DATA("abc", "[a]", "a", 0)
-    TEST_DATA("abc", "a[ab]", "ab", 0)
-    TEST_DATA("abc", "a[abc]c", "abc", 0)
-    TEST_DATA("abc", "[^a]", "b", 0)
-    TEST_DATA("aaa", "[^a]", "", 1)
-    TEST_DATA("abc", "[^abc]", "", 1)
-    TEST_DATA("abc", "[^]", "", -1)
-    TEST_DATA("^a", "[^^]", "a", 0)
-    TEST_DATA("]", "[]]", "]", 0)
-    TEST_DATA("-", "[-]", "-", 0)
-    TEST_DATA("-", "[a-]", "-", 0)
-    TEST_DATA("-]", "[]-]*", "-]", 0)
-    TEST_DATA("abc", "[a-c]", "a", 0)
-    TEST_DATA("abc", "[c-a]", "", -1)    //Error
-    TEST_DATA("abc", "[a-a]", "a", 0)
-    TEST_DATA("abc", "[x-z]", "", 1)
-    TEST_DATA("abc", "[0-9]", "", 1)
-    TEST_DATA("123", "[0-9]", "1", 0)
-    TEST_DATA("abc/5", "[a-z]/[0-9]", "c/5", 0)
-    TEST_DATA("abc/z5", "[a-z]/[0-9]", "", 1)
+    {__LINE__, "abc",       "[a]",              {"a"},              1, 0},
+    {__LINE__, "abc",       "a[ab]",            {"ab"},             1, 0},
+    {__LINE__, "abc",       "a[abc]c",          {"abc"},            1, 0},
+    {__LINE__, "abc",       "[^a]",             {"b"},              1, 0},
+    {__LINE__, "aaa",       "[^a]",             {""},               1, 1},
+    {__LINE__, "abc",       "[^abc]",           {""},               1, 1},
+    {__LINE__, "abc",       "[^]",              {""},               1,-1},
+    {__LINE__, "^a",        "[^^]",             {"a"},              1, 0},
+    {__LINE__, "]",         "[]]",              {"]"},              1, 0},
+    {__LINE__, "-",         "[-]",              {"-"},              1, 0},
+    {__LINE__, "-",         "[a-]",             {"-"},              1, 0},
+    {__LINE__, "-]",        "[]-]*",            {"-]"},             1, 0},
+    {__LINE__, "abc",       "[a-c]",            {"a"},              1, 0},
+    {__LINE__, "abc",       "[c-a]",            {""},               1,-1},
+    {__LINE__, "abc",       "[a-a]",            {"a"},              1, 0},
+    {__LINE__, "abc",       "[x-z]",            {""},               1, 1},
+    {__LINE__, "abc",       "[0-9]",            {""},               1, 1},
+    {__LINE__, "123",       "[0-9]",            {"1"},              1, 0},
+    {__LINE__, "abc/5",     "[a-z]/[0-9]",      {"c/5"},            1, 0},
+    {__LINE__, "abc/z5",    "[a-z]/[0-9]",      {""},               1, 1},
 
-    TEST_DATA("abc", "[b]*", "", 0)
-    TEST_DATA("abc", "[b]*c", "bc", 0)
-    TEST_DATA("abc", "a[b]*c", "abc", 0)
-    TEST_DATA("abbc", "a[b-c]*[a-b]*c", "abbc", 0)
+    {__LINE__, "abc",       "[b]*",             {""},               1, 0},
+    {__LINE__, "abc",       "[b]*c",            {"bc"},             1, 0},
+    {__LINE__, "abc",       "a[b]*c",           {"abc"},            1, 0},
+    {__LINE__, "abbc",      "a[b-c]*[a-b]*c",   {"abbc"},           1, 0},
 
-    TEST_DATA("abc", "a\\{1\\}", "a", 0)
-    TEST_DATA("abc", "a\\{1,\\}", "a", 0)
-    TEST_DATA("abc", "a\\{2,\\}", "", 1)
-    TEST_DATA("aabc", "a\\{2,\\}", "aa", 0)
-    TEST_DATA("baaac", "a\\{2,\\}", "aaa", 0)
-    TEST_DATA("abc", "\\{1\\}", "", -1)
-    TEST_DATA("abc", "a\\{1b\\}", "", -1)
-    TEST_DATA("abc", "a\\{1,b\\}", "", -1)
-    TEST_DATA("abc", "a\\{1,2", "", -1)
-    TEST_DATA("abc", "a\\{2,1\\}", "", -1)
-    TEST_DATA("abc", "a\\{0\\}", "",0)
-    TEST_DATA("abc", "a\\{0,0\\}", "", 0)
-    TEST_DATA("abc", "a\\{,1\\}", "a", 0)
-    TEST_DATA("abc", "\\}", "", 1)
-    TEST_DATA("{",   "\\{", "", -1)
-    TEST_DATA("abc", "a\\{0,32768\\}", "a", -1)
-    TEST_DATA("abc", "a\\{32768\\}", "a", -1)
+    {__LINE__, "abc",       "a\\{1\\}",         {"a"},              1, 0},
+    {__LINE__, "abc",       "a\\{1,\\}",        {"a"},              1, 0},
+    {__LINE__, "abc",       "a\\{2,\\}",        {""},               1, 1},
+    {__LINE__, "aabc",      "a\\{2,\\}",        {"aa"},             1, 0},
+    {__LINE__, "baaac",     "a\\{2,\\}",        {"aaa"},            1, 0},
+    {__LINE__, "abc",       "\\{1\\}",          {""},               1,-1},
+    {__LINE__, "abc",       "a\\{1b\\}",        {""},               1,-1},
+    {__LINE__, "abc",       "a\\{1,b\\}",       {""},               1,-1},
+    {__LINE__, "abc",       "a\\{1,2",          {""},               1,-1},
+    {__LINE__, "abc",       "a\\{2,1\\}",       {""},               1,-1},
+    {__LINE__, "abc",       "a\\{0\\}",         {""},               1, 0},
+    {__LINE__, "abc",       "a\\{0,0\\}",       {""},               1, 0},
+    {__LINE__, "abc",       "a\\{,1\\}",        {"a"},              1, 0},
+    {__LINE__, "abc",       "\\}",              {""},               1, 1},
+    {__LINE__, "{",         "\\{",              {""},               1,-1},
+    {__LINE__, "abc",       "a\\{0,32768\\}",   {"a"},              1,-1},
+    {__LINE__, "abc",       "a\\{32768\\}",     {"a"},              1,-1},
 
-    TEST_DATA("abc", "[a-z]\\{3\\}", "abc", 0)
-    TEST_DATA("abc", "[a-z]\\{4\\}", "", 1)
-    TEST_DATA("abc", "[a-z]\\{3,4\\}", "abc", 0)
-    TEST_DATA("abc", "[a-z]\\{4,5\\}", "", 1)
-    TEST_DATA("abc", ".\\{3\\}", "abc", 0)
-    TEST_DATA("abc", ".\\{4\\}", "", 1)
+    {__LINE__, "abc",       "[a-z]\\{3\\}",     {"abc"},            1, 0},
+    {__LINE__, "abc",       "[a-z]\\{4\\}",     {""},               1, 1},
+    {__LINE__, "abc",       "[a-z]\\{3,4\\}",   {"abc"},            1, 0},
+    {__LINE__, "abc",       "[a-z]\\{4,5\\}",   {""},               1, 1},
+    {__LINE__, "abc",       ".\\{3\\}",         {"abc"},            1, 0},
+    {__LINE__, "abc",       ".\\{4\\}",         {""},               1, 1},
 
-    TEST_DATA("abc", "\\(a\\)", "a", 0)
-    TEST_DATA("abc", "\\(c\\)", "c", 0)
-    TEST_DATA("abc", "\\(abc\\)", "abc", 0)
-    TEST_DATA("abc", "^\\(a\\)", "a", 0)
-    TEST_DATA("abc", "\\(c\\)$", "c", 0)
-    TEST_DATA("abc", "^\\(abc\\)$", "abc", 0)
-    TEST_DATA("abc", "\\(a", "", -1)
-    TEST_DATA("abc", "\\([bc]\\)", "b", 0)
-    TEST_DATA("abc", "a\\([bc]*\\)", "abc", 0)
-    TEST_DATA("abc", "a\\([bc]\\)*", "abc", 0)
-    TEST_DATA("abc", "\\(a\\)\\(bc\\)", "abc", 0)
-    TEST_DATA("abc", "\\(...\\)", "abc", 0)
-    TEST_DATA("abc", "\\([a-z]\\{1,3\\}\\)", "abc", 0)
-    TEST_DATA("abc", "\\)", "", -1)
-    TEST_DATA("abc", "\\(^a\\)b", "ab", 0)
-    TEST_DATA("0abc", "\\(^a\\)b", "", 1)
-    TEST_DATA("abc", "b\\(c$\\)", "bc", 0)
-    TEST_DATA("abcd", "b\\(c$\\)", "", 1)
-    TEST_DATA("abc", "\\(^abc$\\)", "abc", 0)
-    TEST_DATA("abcd", "\\(^abc$\\)", "", 1)
-    TEST_DATA("abcd", "\\(^abc$\\)d", "", 1)
-    TEST_DATA("abc", "\\(^[abc]*$\\)", "abc", 0)
-    TEST_DATA("abc", "\\(\\(abc\\)\\)", "abc", 0)
-    TEST_DATA("abc", "\\(a\\(b\\)c\\)", "abc", 0)
-    TEST_DATA("abcabc", "\\(a\\(b\\)c\\)*", "abcabc", 0)
-    TEST_DATA("aba", "\\(\\)", "", 0)
-    TEST_DATA("aba", "\\(a\\).\\1", "aba", 0)
-    TEST_DATA("ab0", "\\0",         "0", 0)
-    TEST_DATA("aba", "\\1",         "", -1)
-    TEST_DATA("aba", "\\(a\\).\\9", "", -1)
-    TEST_DATA("aba", "\\(a\\1\\).", "", -1)
+    {__LINE__, "abc",       "\\(a\\)",          {"a","a"},          2, 0},
+    {__LINE__, "abc",       "\\(c\\)",          {"c","c"},          2, 0},
+    {__LINE__, "abc",       "\\(abc\\)",        {"abc","abc"},      2, 0},
+    {__LINE__, "abc",       "^\\(a\\)",         {"a","a"},          2, 0},
+    {__LINE__, "abc",       "\\(c\\)$",         {"c","c"},          2, 0},
+    {__LINE__, "abc",       "^\\(abc\\)$",      {"abc","abc"},      2, 0},
+    {__LINE__, "abc",       "\\(a",             {""},               1,-1},
+    {__LINE__, "abc",       "\\([bc]\\)",       {"b","b"},          2, 0},
+    {__LINE__, "abc",       "a\\([bc]*\\)",     {"abc","bc"},       2, 0},
+    {__LINE__, "abc",       "a\\(.\\)*",        {"abc","c"},        2, 0},
+    {__LINE__, "abc",       "\\(a\\)\\(bc\\)",  {"abc","a","bc"},   3, 0},
+    {__LINE__, "abc",       "\\(a\\)\\(b\\)\\(c\\)",  {"abc","a","b","c"},   4, 0},
+    {__LINE__, "abc",       "\\(...\\)",        {"abc","abc"},      2, 0},
+    {__LINE__, "abc",       "\\([a-z]\\{1,3\\}\\)", {"abc","abc"},  2, 0},
+    {__LINE__, "abc",       "\\)",              {""},               1,-1},
+    {__LINE__, "abc",       "\\(^a\\)b",        {"ab","a"},         2, 0},
+    {__LINE__, "0abc",      "\\(^a\\)b",        {""},               1, 1},
+    {__LINE__, "abc",       "b\\(c$\\)",        {"bc","c"},         2, 0},
+    {__LINE__, "abcd",      "b\\(c$\\)",        {""},               1, 1},
+    {__LINE__, "abc",       "\\(^abc$\\)",      {"abc","abc"},      2, 0},
+    {__LINE__, "abcd",      "\\(^abc$\\)",      {""},               1, 1},
+    {__LINE__, "abcd",      "\\(^abc$\\)d",     {""},               1, 1},
+    {__LINE__, "abc",       "\\(^[abc]*$\\)",   {"abc","abc"},      2, 0},
+    {__LINE__, "abc",       "\\(\\(abc\\)\\)",  {"abc","abc","abc"},3, 0},
+    {__LINE__, "abc",       "\\(a\\(b\\)c\\)",  {"abc","abc","b"},  3, 0},
+    {__LINE__, "abcabc",    "\\(a\\(b\\)c\\)*", {"abcabc","abc","b"}, 3, 0},
+    {__LINE__, "aba",       "\\(\\)",           {"",""},            2, 0},
+    {__LINE__, "aba",       "\\(a\\).\\1",      {"aba","a"},        2, 0},
+    {__LINE__, "ab0",       "\\0",              {"0"},              1, 0},
+    {__LINE__, "aba",       "\\1",              {""},               1,-1},
+    {__LINE__, "aba",       "\\(a\\).\\9",      {""},               1,-1},
+    {__LINE__, "aba",       "\\(a\\1\\).",      {""},               1,-1},
  
-    TEST_DATA("XYZ123_", "[[:upper:]]*", "XYZ", 0)
-    TEST_DATA("abcXYZ123_", "[[:upper:][:lower:]]*", "abcXYZ", 0)
-    TEST_DATA("abcXYZ123_", "[[:alpha:]]*", "abcXYZ", 0)
-    TEST_DATA("abcXYZ123_", "[[:alnum:]]*", "abcXYZ123", 0)
-//  TEST_DATA("abcXYZ123_", "[[:word:]]*", "abcXYZ123_", 0) //非POSIX
-    TEST_DATA("x123ABCdefx", "x[[:digit:]]*", "x123", 0)
-    TEST_DATA("x123ABCdefx", "x[[:xdigit:]]*", "x123ABCdef", 0)
-    TEST_DATA("[:-+a]", "[[:punct:]]*", "[:-+", 0)
-    TEST_DATA("\01a", "[[:cntrl:]]*", "\01", 0)
-    TEST_DATA("abc \t", "[[:graph:]]*", "abc", 0)
-    TEST_DATA("abc \t", "[[:print:]]*", "abc ", 0)
+    {__LINE__, "XYZ123_",    "[[:upper:]]*",     {"XYZ"},           1, 0},
+    {__LINE__, "abcXYZ123_", "[[:upper:][:lower:]]*", {"abcXYZ"},   1, 0},
+    {__LINE__, "abcXYZ123_", "[[:alpha:]]*",     {"abcXYZ"},        1, 0},
+    {__LINE__, "abcXYZ123_", "[[:alnum:]]*",     {"abcXYZ123"},     1, 0},
+//  {__LINE__, "abcXYZ123_", "[[:word:]]*",      {"abcXYZ123_"},    1, 0}, //非POSIX
+    {__LINE__, "x123ABCdefx","x[[:digit:]]*",    {"x123"},          1, 0},
+    {__LINE__, "x123ABCdefx","x[[:xdigit:]]*",   {"x123ABCdef"},    1, 0},
+    {__LINE__, "[:-+a]",     "[[:punct:]]*",     {"[:-+"},          1, 0},
+    {__LINE__, "\01a",       "[[:cntrl:]]*",     {"\01"},           1, 0},
+    {__LINE__, "abc \t",     "[[:graph:]]*",     {"abc"},           1, 0},
+    {__LINE__, "abc \t",     "[[:print:]]*",     {"abc "},          1, 0},
 
-    TEST_DATA("abc", "[:alpha:]*", "a", 0)
-    TEST_DATA("abc", "[[:Alpha:]]*", "", -1)
-    TEST_DATA("abc", "[[:alpha]]*", "", -1)
+    {__LINE__, "abc",        "[:alpha:]*",       {"a"},             1, 0},
+    {__LINE__, "abc",        "[[:Alpha:]]*",     {""},              1,-1},
+    {__LINE__, "abc",        "[[:alpha]]*",      {""},              1,-1},
+//}
