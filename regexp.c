@@ -641,15 +641,24 @@ static int reg_match_pat(pattern_t *pat, const char *text, int *len) {
     case PAT_DOT:
         return *text != '\0';
     case PAT_SUBREG:
-    {
         if (reg_exec_main(pat->regcomp, text)==0) {
             *len = g_pmatch[pat->regcomp->ref_num].rm_eo - g_pmatch[pat->regcomp->ref_num].rm_so;
             return 1;
         }
         return 0;
-    }
     case PAT_BACKREF:
+    {
+        assert(pat->ref_num<g_nmatch);
+        regmatch_t *regmat = g_pmatch + pat->ref_num;
+        const char *substr = g_text + regmat->rm_so;
+        int sublen = regmat->rm_eo - regmat->rm_so;
+        assert(sublen>0);
+        if (strncmp(text, substr, sublen)==0) {
+            *len = sublen;
+            return 1;
+        }
         return 0;
+    }
     case PAT_DOLLAR:
         if (*text=='\0') {
             *len = 0;

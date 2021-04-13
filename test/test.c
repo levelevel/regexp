@@ -11,7 +11,7 @@ typedef struct {
     const char *regexp;
     const char *match[10];
     const int nmatch;
-    const int expect;
+    const int expect;   //戻り値 0:OK, 1:不一致, -1:コンパイルエラー
 } test_t;
 
 test_t data[] = {
