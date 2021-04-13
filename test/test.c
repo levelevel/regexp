@@ -6,12 +6,14 @@
 #include "../regexp.h"
 
 typedef struct {
-    int no;
+    const int no;
     const char *text;
     const char *regexp;
     const char *match[10];
     const int nmatch;
     const int expect;   //戻り値 0:OK, 1:不一致, -1:コンパイルエラー
+    const int cflags;   //REG_EXTENDED|REG_ICASE|REG_NEWLINE|REG_NOSUB
+    const int eflags;   //REG_NOTBOL|REG_NOTEOL|REG_STARTEND
 } test_t;
 
 test_t data[] = {
@@ -31,25 +33,25 @@ static int test_regexp(test_t *test_data) {
 
     regmatch_t *pmatch1 = NULL;
     size_t nmatch1;
-    errcode = regcomp(&preg, regexp, 0);
+    errcode = regcomp(&preg, regexp, test_data->cflags);
     if (errcode!=0) {
         regerror(errcode, &preg, buf, sizeof(buf));
         ret1 = -1;
     } else {
         nmatch1 = preg.re_nsub+1;
         pmatch1 = calloc(nmatch1, sizeof(regmatch_t));
-        ret1 = regexec(&preg, text, nmatch1, pmatch1, 0);
+        ret1 = regexec(&preg, text, nmatch1, pmatch1, test_data->eflags);
     }
 
     regmatch_t *pmatch2 = NULL;
     size_t nmatch2;
-    preg_compile = reg_compile(regexp, &nmatch2);
+    preg_compile = reg_compile(regexp, &nmatch2, test_data->cflags);
     if (preg_compile==NULL) {
         ret2 = -1;
     } else {
         nmatch2++;
         pmatch2 = calloc(nmatch2, sizeof(regmatch_t));
-        ret2 = reg_exec(preg_compile, text, nmatch2, pmatch2);
+        ret2 = reg_exec(preg_compile, text, nmatch2, pmatch2, test_data->eflags);
     }
 
     for (int i=0; i<test_data->nmatch; i++) {
@@ -59,8 +61,8 @@ static int test_regexp(test_t *test_data) {
             strncmp(test_data->text+pmatch2[i].rm_so, test_data->match[i], len)==0 &&
             pmatch1[i].rm_so==pmatch2[i].rm_so && pmatch1[i].rm_eo==pmatch2[i].rm_eo);
         if (ret1 != ret2 || ret1 != test_data->expect || !match_sub || nmatch1!=nmatch2) {
-            printf("ERROR: line=%d[%d]: ret=%d:%d text='%s', regexp='%s', nmatch=%ld:%ld\n", 
-                n, i, ret1, ret2, text, regexp, nmatch1, nmatch2);
+            printf("ERROR: line=%d[%d]: ret=%d:%d text='%s', regexp='%s', nmatch=%ld:%ld, cflags=%x\n", 
+                n, i, ret1, ret2, text, regexp, nmatch1, nmatch2, test_data->cflags);
             if (!match_sub) {
                 printf("  pmatch1=[%d,%d], pmatch2=[%d,%d], expected_match='%s'\n",
                     pmatch1[i].rm_so, pmatch1[i].rm_eo, 
