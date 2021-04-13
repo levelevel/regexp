@@ -223,26 +223,11 @@ static reg_compile_t *reg_exp(const char *regexp, pattern_type_t mode) {
     preg_compile->mode = mode;
     preg_compile->prev_pat = NULL;
 
-//#define OLD_DOLOR
-#ifdef OLD_DOLOR
-    if (token1_is(preg_compile->p, '^')) {
-        preg_compile->match_begin = 1;
-        preg_compile->match_here = 1;
-        preg_compile->p++;
-    }
-#endif
     reg_stat_t ret = sequence_exp(preg_compile);
     if (ret==REG_ERR) {
         reg_compile_free(preg_compile);
         return NULL;
     } else if (ret==REG_END) {
-#ifdef OLD_DOLOR
-        if (token1_is(preg_compile->p, '$')) {
-            preg_compile->match_end = 1;
-            push_pattern(preg_compile, new_pattern(PAT_DOLLAR));
-            preg_compile->p++;
-        }
-#endif
         if (preg_compile->mode==PAT_SUBREG) {
             assert(token2_is(preg_compile->p, "\\)"));
             preg_compile->p += 2;
@@ -290,11 +275,7 @@ static reg_stat_t repeat_exp(reg_compile_t *preg_compile) {
         if (new_repeat(preg_compile)==REG_ERR) return REG_ERR;
     }
 
-    if (token1_is(preg_compile->p, '\0')
-#ifdef OLD_DOLOR
-     || token2_is(preg_compile->p, "$\0")
-#endif
-     ) {
+    if (token1_is(preg_compile->p, '\0')) {
         if (preg_compile->mode==PAT_SUBREG) {
             reg_set_err(REG_ERR_CODE_UNMATCHED_PAREN);
             return REG_ERR;
@@ -319,11 +300,7 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
     int cont_flag;
     do {
         cont_flag = 0;
-        if (token1_is(preg_compile->p, '\0')
-#ifdef OLD_DOLOR
-         || token2_is(preg_compile->p, "$\0")
-#endif
-         ) {
+        if (token1_is(preg_compile->p, '\0')) {
             if (preg_compile->mode==PAT_SUBREG) {
                 reg_set_err(REG_ERR_CODE_UNMATCHED_PAREN);
                 return REG_ERR;
@@ -337,11 +314,7 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
             reg_set_err(REG_ERR_CODE_INVALID_PRECEDING_REGEXP);
         } else if (token2_is(preg_compile->p, "\\(")) {
             return new_subreg(preg_compile);
-        } else if (token2_is(preg_compile->p, "\\)")
-#ifdef OLD_DOLOR
-                || token3_is(preg_compile->p, "$\\)")
-#endif
-                ) {
+        } else if (token2_is(preg_compile->p, "\\)")) {
             if (preg_compile->mode==PAT_SUBREG) return REG_END;
             reg_set_err(REG_ERR_CODE_UNMATCHED_PAREN);
         } else if (token1_is(preg_compile->p, '\\') && preg_compile->p[1]>='1' && preg_compile->p[1]<='9') {
@@ -360,19 +333,12 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
         } else if (token1_is(preg_compile->p, '[')) {
             return new_char_set(preg_compile);
         } else if ((token1_is(preg_compile->p, '$') && (g_syntax&RE_CONTEXT_INDEP_ANCHORS))
-#ifndef OLD_DOLOR
                 || token2_is(preg_compile->p, "$\0")
-                || (token3_is(preg_compile->p, "$\\)") && preg_compile->mode==PAT_SUBREG)
-#endif
-                ) {
+                || (token3_is(preg_compile->p, "$\\)") && preg_compile->mode==PAT_SUBREG)) {
             pat = new_pattern(PAT_DOLLAR);
             cont_flag = 1;
         } else if (token1_is(preg_compile->p, '^') &&
-                 ((g_syntax&RE_CONTEXT_INDEP_ANCHORS) 
-#ifndef OLD_DOLOR
-                    || preg_compile->regexp==preg_compile->p
-#endif
-                    )) {
+                 ((g_syntax&RE_CONTEXT_INDEP_ANCHORS) || preg_compile->regexp==preg_compile->p)) {
             pat = new_pattern(PAT_CARET);
             cont_flag = 1;
         } else {
