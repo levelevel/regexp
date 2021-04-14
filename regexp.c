@@ -64,6 +64,11 @@
      immediately after an alternation or begin-group operator.  */
 //# define RE_CONTEXT_INVALID_OPS (RE_CONTEXT_INDEP_OPS << 1)
 
+/* If this bit is not set, then + and ? are operators, and \+ and \? are
+     literals.
+   If set, then \+ and \? are operators and + and ? are literals.  */
+//# define RE_BK_PLUS_QM (RE_BACKSLASH_ESCAPE_IN_LISTS << 1)
+
 /* If this bit is set, then an unmatched ) is ordinary.
    If not set, then an unmatched ) is invalid.  */
 //# define RE_UNMATCHED_RIGHT_PAREN_ORD (RE_NO_EMPTY_RANGES << 1)
@@ -195,6 +200,8 @@ static void reg_set_err(reg_err_code_t err_code);
 #define token_is_close_brace(p) ((g_syntax&RE_NO_BK_BRACES) ? token1_is(p, '}') : token2_is(p, "\\}"))
 #define token_is_open_paren(p)  ((g_syntax&RE_NO_BK_PARENS) ? token1_is(p, '(') : token2_is(p, "\\("))
 #define token_is_close_paren(p) ((g_syntax&RE_NO_BK_PARENS) ? token1_is(p, ')') : token2_is(p, "\\)"))
+#define token_is_plus(p)       (!(g_syntax&RE_BK_PLUS_QM)   ? token1_is(p, '+') : token2_is(p, "\\+"))
+#define token_is_question(p)   (!(g_syntax&RE_BK_PLUS_QM)   ? token1_is(p, '?') : token2_is(p, "\\?"))
 
 // reg_compile: compile regexp
 // reg_exp      = sequence_exp ( "|" sequence_exp )*                            ERE
@@ -318,10 +325,24 @@ static reg_stat_t repeat_exp(reg_compile_t *preg_compile) {
 
     pattern_t *pat = NULL;
     for (;;) {
-        if (token1_is(preg_compile->p, '*')) {
+        if (token1_is(preg_compile->p, '*') ||
+            token_is_plus(preg_compile->p) ||       //'+' or '/+'
+            token_is_question(preg_compile->p)) {   //'?' or '/?'
+            if (*preg_compile->p=='\\') preg_compile->p++;
             pat = new_pattern(PAT_REPEAT);
-            pat->min = 0;
-            pat->max = RE_DUP_MAX;
+            switch (*preg_compile->p) {
+            case '*':
+                pat->min = 0;
+                pat->max = RE_DUP_MAX;
+                break;
+            case '+':
+                pat->min = 1;
+                pat->max = RE_DUP_MAX;
+                break;
+            case '?':
+                pat->min = 0;
+                pat->max = 1;
+            }
             push_pattern(preg_compile, pat);
             preg_compile->p++;
             if ((g_syntax&RE_CONTEXT_INDEP_OPS)) continue;
@@ -365,8 +386,8 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
             return REG_END;
         } else if (token1_is(preg_compile->p, '.')) {
             pat = new_pattern(PAT_DOT);
-        } else if ((token1_is(preg_compile->p, '*') && 
-                   ((g_syntax&RE_CONTEXT_INDEP_OPS) || (preg_compile->prev_pat && preg_compile->prev_pat->type!=PAT_CARET)))
+        } else if (((token1_is(preg_compile->p, '*') || token_is_plus(preg_compile->p) || token_is_question(preg_compile->p))
+                 && ((g_syntax&RE_CONTEXT_INVALID_OPS) || (preg_compile->prev_pat && preg_compile->prev_pat->type!=PAT_CARET)))
                 || token_is_open_brace(preg_compile->p)) {
             reg_set_err(REG_ERR_CODE_INVALID_PRECEDING_REGEXP);
         } else if (token_is_open_paren(preg_compile->p)) {
