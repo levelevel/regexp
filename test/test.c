@@ -5,16 +5,19 @@
 
 #include "../regexp.h"
 
+//テスト項目
 typedef struct {
-    const int no;
-    const char *text;
-    const char *regexp;
-    const char *match[10];
-    const int nmatch;
-    const int expect;   //戻り値 0:OK, 1:不一致, -1:コンパイルエラー
-    const int cflags;   //REG_EXTENDED|REG_ICASE|REG_NEWLINE|REG_NOSUB
-    const int eflags;   //REG_NOTBOL|REG_NOTEOL|REG_STARTEND
+    const int no;           //テストNo:行番号
+    const char *text;       //検索文字列
+    const char *regexp;     //正規表現
+    const char *match[10];  //マッチした文字列の配列（全体＋グループ分）
+    const int nmatch;       //グループの数
+    const int expect;       //戻り値 0:OK, 1:不一致, -1:コンパイルエラー
+          int cflags;       //REG_EXTENDED|REG_ICASE|REG_NEWLINE|REG_NOSUB
+    const int eflags;       //REG_NOTBOL|REG_NOTEOL|REG_STARTEND
 } test_t;
+#define REG_BASIC   0
+#define REG_BRE_ERE 0xf000  //cflagsでBER/ERB共通テスト項目（REG_EXTENDED有無両方でテストする）
 
 test_t data[] = {
     #include "test_dat.h"
@@ -32,7 +35,7 @@ static int test_regexp(test_t *test_data) {
     char buf[1024];
 
     regmatch_t *pmatch1 = NULL;
-    size_t nmatch1;
+    size_t nmatch1 = 0;
     errcode = regcomp(&preg, regexp, test_data->cflags);
     if (errcode!=0) {
         regerror(errcode, &preg, buf, sizeof(buf));
@@ -44,7 +47,7 @@ static int test_regexp(test_t *test_data) {
     }
 
     regmatch_t *pmatch2 = NULL;
-    size_t nmatch2;
+    size_t nmatch2 = 0;
     preg_compile = reg_compile(regexp, &nmatch2, test_data->cflags);
     if (preg_compile==NULL) {
         ret2 = -1;
@@ -78,7 +81,8 @@ static int test_regexp(test_t *test_data) {
         //reg_dump(stdout, preg_compile, 2);
     }
     if (errcode!=reg_err_info.err_code) {
-        fprintf(stderr, "%d: regex  Error: regexp='%s', errcode=%d, %s\n", n, regexp, errcode, buf);
+        fprintf(stderr, "%d: regex  Error: regexp='%s', errcode=%d, %s\n", n, regexp, errcode, errcode?buf:"");
+        for (int i=0; i<nmatch1; i++) printf("    pmatch1[%d]=[%d,%d]\n", i, pmatch1[i].rm_so, pmatch1[i].rm_eo);
         fprintf(stderr, "%d: regexp Error: regexp='%s', errcode=%d, %s\n", n, regexp, reg_err_info.err_code, reg_err_info.err_msg);
     }
 
@@ -95,16 +99,25 @@ int main(int argc, char **argv) {
     UNUSED(argc);
     UNUSED(argv);
     int err_cnt = 0;
+    int bre_cnt = 0;
+    int ere_cnt = 0;
     int size = sizeof(data)/sizeof(test_t);
     for (int i=0; i<size; i++) {
-        if (data[i].text==NULL) break;
-        if (test_regexp(&data[i])==0) err_cnt++;
+        test_t *test = &data[i];
+        if (test->text==NULL) break;
+        if (test->cflags&REG_BRE_ERE) {
+            test->cflags &= ~(REG_EXTENDED|REG_BRE_ERE);
+            if (test_regexp(test)==0) err_cnt++;    //BREでテスト
+            bre_cnt++;
+            test->cflags |= REG_EXTENDED;
+            if (test_regexp(test)==0) err_cnt++;    //EREでテスト
+            ere_cnt++;
+        } else {
+            if (test_regexp(test)==0) err_cnt++;
+            if (test->cflags&REG_EXTENDED) ere_cnt++;
+            else                           bre_cnt++;
+        }
     }
-    if (err_cnt==0) {
-        printf("PASS: %d/%d\n", size, size);
-        return 0;
-    } else {
-        printf("FAIL: %d/%d\n", err_cnt, size);
-        return 1;
-    }
+    printf("%s: %d/%d (BRE=%d, ERE=%d)\n", err_cnt?"FAIL":"PASS", err_cnt?err_cnt:size, size, bre_cnt, ere_cnt);
+    return !(err_cnt==0);
 }

@@ -2,7 +2,7 @@
 //              | "^"? sequence_exp* "$"?                                   BRE
 // sequence_exp = repeat_exp*                                               BRE/ERE
 // repeat_exp   = primary_exp ( "*" | "\{" repeat_range "\}" )?             BRE
-//              | primary_exp ( "*" | "*" | "?" | "{" repeat_range "}" )?       ERE
+//              | repeat_exp ( "*" | "+" | "?" | "{" repeat_range "}" )?        ERE
 // repeat_range = num                                                       BRE/ERE
 //              | num? "," num
 //              | num "," num?
@@ -36,6 +36,52 @@
 // https://www.cs.princeton.edu/courses/archive/spr09/cos333/beautiful.html
 // A Regular Expression Matcher
 // Code by Rob Pike 
+
+//regex.h -------------------------------------------------------------
+/* If this bit is set, then ^ and $ are always anchors (outside bracket
+     expressions, of course).
+   If this bit is not set, then it depends:
+	^  is an anchor if it is at the beginning of a regular
+	   expression or after an open-group or an alternation operator;
+	$  is an anchor if it is at the end of a regular expression, or
+	   before a close-group or an alternation operator.
+
+   This bit could be (re)combined with RE_CONTEXT_INDEP_OPS, because
+   POSIX draft 11.2 says that * etc. in leading positions is undefined.
+   We already implemented a previous draft which made those constructs
+   invalid, though, so we haven't changed the code back.  */
+//# define RE_CONTEXT_INDEP_ANCHORS (RE_CHAR_CLASSES << 1)
+
+/* If this bit is set, then special characters are always special
+     regardless of where they are in the pattern.
+   If this bit is not set, then special characters are special only in
+     some contexts; otherwise they are ordinary.  Specifically,
+     * + ? and intervals are only special when not after the beginning,
+     open-group, or alternation operator.  */
+//# define RE_CONTEXT_INDEP_OPS (RE_CONTEXT_INDEP_ANCHORS << 1)
+
+/* If this bit is set, then *, +, ?, and { cannot be first in an re or
+     immediately after an alternation or begin-group operator.  */
+//# define RE_CONTEXT_INVALID_OPS (RE_CONTEXT_INDEP_OPS << 1)
+
+/* If this bit is set, then an unmatched ) is ordinary.
+   If not set, then an unmatched ) is invalid.  */
+//# define RE_UNMATCHED_RIGHT_PAREN_ORD (RE_NO_EMPTY_RANGES << 1)
+
+/* Syntax bits common to both basic and extended POSIX regex syntax.  */
+//# define _RE_SYNTAX_POSIX_COMMON
+//  (RE_CHAR_CLASSES | RE_DOT_NEWLINE      | RE_DOT_NOT_NULL
+//   | RE_INTERVALS  | RE_NO_EMPTY_RANGES)
+//
+//# define RE_SYNTAX_POSIX_BASIC						
+//  (_RE_SYNTAX_POSIX_COMMON | RE_BK_PLUS_QM | RE_CONTEXT_INVALID_DUP)
+//
+//# define RE_SYNTAX_POSIX_EXTENDED
+//  (_RE_SYNTAX_POSIX_COMMON  | RE_CONTEXT_INDEP_ANCHORS
+//   | RE_CONTEXT_INDEP_OPS   | RE_NO_BK_BRACES
+//   | RE_NO_BK_PARENS        | RE_NO_BK_VBAR
+//   | RE_CONTEXT_INVALID_OPS | RE_UNMATCHED_RIGHT_PAREN_ORD)
+//regex.h -------------------------------------------------------------
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -145,6 +191,11 @@ static void reg_set_err(reg_err_code_t err_code);
 #define token2_is(p, str)   (memcmp(p, str, 2)==0)
 #define token3_is(p, str)   (memcmp(p, str, 3)==0)
 
+#define token_is_open_brace(p)  ((g_syntax&RE_NO_BK_BRACES) ? token1_is(p, '{') : token2_is(p, "\\{"))
+#define token_is_close_brace(p) ((g_syntax&RE_NO_BK_BRACES) ? token1_is(p, '}') : token2_is(p, "\\}"))
+#define token_is_open_paren(p)  ((g_syntax&RE_NO_BK_PARENS) ? token1_is(p, '(') : token2_is(p, "\\("))
+#define token_is_close_paren(p) ((g_syntax&RE_NO_BK_PARENS) ? token1_is(p, ')') : token2_is(p, "\\)"))
+
 // reg_compile: compile regexp
 // reg_exp      = sequence_exp ( "|" sequence_exp )*                            ERE
 //              | "^"? sequence_exp* "$"?                                   BRE
@@ -229,8 +280,9 @@ static reg_compile_t *reg_exp(const char *regexp, pattern_type_t mode) {
         return NULL;
     } else if (ret==REG_END) {
         if (preg_compile->mode==PAT_SUBREG) {
-            assert(token2_is(preg_compile->p, "\\)"));
-            preg_compile->p += 2;
+            assert(token_is_close_paren(preg_compile->p));
+            if (*preg_compile->p=='\\') preg_compile->p++;
+            preg_compile->p++;
         } else {
             assert(token1_is(preg_compile->p, '\0'));
         }
@@ -244,7 +296,7 @@ static reg_compile_t *reg_exp(const char *regexp, pattern_type_t mode) {
 
 // sequence_exp = repeat_exp*                                               BRE/ERE
 // repeat_exp   = primary_exp ( "*" | "\{" repeat_range "\}" )?             BRE
-//              | primary_exp ( "*" | "*" | "?" | "{" repeat_range "}" )?       ERE
+//              | repeat_exp ( "*" | "+" | "?" | "{" repeat_range "}" )?        ERE
 //戻り値：エラー時はreg_err_code/reg_err_msgにエラー情報を設定する。
 static reg_stat_t sequence_exp(reg_compile_t *preg_compile) {
     reg_stat_t ret = REG_OK;
@@ -255,7 +307,7 @@ static reg_stat_t sequence_exp(reg_compile_t *preg_compile) {
 }
 
 // repeat_exp   = primary_exp ( "*" | "\{" repeat_range "\}" )?             BRE
-//              | primary_exp ( "*" | "*" | "?" | "{" repeat_range "}" )?       ERE
+//              | repeat_exp ( "*" | "+" | "?" | "{" repeat_range "}" )?        ERE
 // repeat_range = num                                                       BRE/ERE
 //              | num? "," num
 //              | num "," num?
@@ -265,14 +317,19 @@ static reg_stat_t repeat_exp(reg_compile_t *preg_compile) {
     if (ret!=REG_OK) return ret;
 
     pattern_t *pat = NULL;
-    if (token1_is(preg_compile->p, '*')) {
-        pat = new_pattern(PAT_REPEAT);
-        pat->min = 0;
-        pat->max = RE_DUP_MAX;
-        push_pattern(preg_compile, pat);
-        preg_compile->p++;
-    } else if (token2_is(preg_compile->p, "\\{")) {
-        if (new_repeat(preg_compile)==REG_ERR) return REG_ERR;
+    for (;;) {
+        if (token1_is(preg_compile->p, '*')) {
+            pat = new_pattern(PAT_REPEAT);
+            pat->min = 0;
+            pat->max = RE_DUP_MAX;
+            push_pattern(preg_compile, pat);
+            preg_compile->p++;
+            if ((g_syntax&RE_CONTEXT_INDEP_OPS)) continue;
+        } else if (token_is_open_brace(preg_compile->p)) {  //'{' or '\{'
+            if (new_repeat(preg_compile)==REG_ERR) return REG_ERR;
+            if ((g_syntax&RE_CONTEXT_INDEP_OPS)) continue;
+        }
+        break;
     }
 
     if (token1_is(preg_compile->p, '\0')) {
@@ -308,14 +365,15 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
             return REG_END;
         } else if (token1_is(preg_compile->p, '.')) {
             pat = new_pattern(PAT_DOT);
-        } else if ((token1_is(preg_compile->p, '*') && (preg_compile->prev_pat && preg_compile->prev_pat->type!=PAT_CARET))
-                || token2_is(preg_compile->p, "\\{")) {
-            //パターンの先頭の'*'はリテラル文字、"\{"はエラー
+        } else if ((token1_is(preg_compile->p, '*') && 
+                   ((g_syntax&RE_CONTEXT_INDEP_OPS) || (preg_compile->prev_pat && preg_compile->prev_pat->type!=PAT_CARET)))
+                || token_is_open_brace(preg_compile->p)) {
             reg_set_err(REG_ERR_CODE_INVALID_PRECEDING_REGEXP);
-        } else if (token2_is(preg_compile->p, "\\(")) {
+        } else if (token_is_open_paren(preg_compile->p)) {
             return new_subreg(preg_compile);
-        } else if (token2_is(preg_compile->p, "\\)")) {
+        } else if (token_is_close_paren(preg_compile->p)) {
             if (preg_compile->mode==PAT_SUBREG) return REG_END;
+            if (g_syntax&RE_UNMATCHED_RIGHT_PAREN_ORD) goto L_CHAR;  //EREでは単独の')'はリテラル
             reg_set_err(REG_ERR_CODE_UNMATCHED_PAREN);
         } else if (token1_is(preg_compile->p, '\\') && preg_compile->p[1]>='1' && preg_compile->p[1]<='9') {
             int num = preg_compile->p[1]-'0';
@@ -342,11 +400,13 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
             pat = new_pattern(PAT_CARET);
             cont_flag = 1;
         } else {
+            L_CHAR:
             pat = new_pattern(PAT_CHAR);
             pat->c = preg_compile->p[0];
         }
         if (pat) {
             push_pattern(preg_compile, pat);
+            pat = NULL;
         } else {
             return REG_ERR;
         }
@@ -359,11 +419,12 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
 static reg_stat_t new_subreg(reg_compile_t *preg_compile) {
     pattern_t *pat = new_pattern(PAT_SUBREG);
     const char *regexp = preg_compile->p;
-    assert(token2_is(regexp, "\\("));
+    assert(token_is_open_paren(regexp));
     preg_compile->nparen = ++g_nparen;
     int ref_num = g_nparen;
 
-    regexp += 2;
+    if (*regexp=='\\') regexp++;
+    regexp ++;
     pat->regcomp = reg_exp(regexp, PAT_SUBREG);
     if (pat->regcomp==NULL) {
         reg_pattern_free(pat);
@@ -380,28 +441,29 @@ static reg_stat_t new_subreg(reg_compile_t *preg_compile) {
 
 // new_repeat: 繰り返し条件を生成する
 // repeat_exp   = primary_exp ( "*" | "\{" repeat_range "\}" )?             BRE
-//              | primary_exp ( "*" | "*" | "?" | "{" repeat_range "}" )?       ERE
+//              | primary_exp ( "*" | "+" | "?" | "{" repeat_range "}" )?       ERE
 // repeat_range = num                                                       BRE/ERE
 //              | num? "," num
 //              | num "," num?
 static reg_stat_t new_repeat(reg_compile_t *preg_compile) {
     pattern_t *pat = new_pattern(PAT_REPEAT);
     const char *regexp = preg_compile->p;
-    assert(token2_is(regexp, "\\{"));
+    assert(token_is_open_brace(regexp));
     int mode = 1;   //第nパラメータ取得モード
     int min=0, max=-1;
 
-    regexp += 2;
+    if (*regexp=='\\') regexp++;    //'\\'の分
+    regexp ++;                      //'{'の分
     for (; *regexp != '\0' && mode<3; regexp++) {
         switch (mode) {
         case 1:             //第1パラメータの取得
             if        (token1_is(regexp, ',')) {
                 mode = 2;
                 break;
-            } else if (token2_is(regexp, "\\}")) {
+            } else if (token_is_close_brace(regexp)) {
                 mode = 3;
                 max = min;
-                regexp++;
+                if (*regexp=='\\') regexp++;
             } else if (isdigit(*regexp)) {
                 min = min*10 + *regexp - '0';
             } else {
@@ -409,9 +471,9 @@ static reg_stat_t new_repeat(reg_compile_t *preg_compile) {
             }
             break;
         case 2:             //第2パラメータの取得
-            if        (token2_is(regexp, "\\}")) {
+            if        (token_is_close_brace(regexp)) {
                 mode = 3;   //完了
-                regexp++;
+                if (*regexp=='\\') regexp++;
             } else if (isdigit(*regexp)) {
                 if (max<0) max = 0;
                 max = max*10 + *regexp - '0';
@@ -768,8 +830,8 @@ static reg_err_info_t reg_err_def[] = {
     {REG_ERR_CODE_INVALID_BACK_REF,         "Invalid back reference"},
     {REG_ERR_CODE_UNMATCHED_BRACKET,        "Unmatched [, [^, [:, [., or [="},
     {REG_ERR_CODE_UNMATCHED_PAREN,          "Unmatched ( or \\("},
-    {REG_ERR_CODE_UNMATCHED_BRACE,          "Unmatched \\{"},
-    {REG_ERR_CODE_INVALID_CONTENT_OF_BRACE, "Invalid content of \\{\\}"},
+    {REG_ERR_CODE_UNMATCHED_BRACE,          "Unmatched { or \\{"},
+    {REG_ERR_CODE_INVALID_CONTENT_OF_BRACE, "Invalid content of {} or \\{\\}"},
     {REG_ERR_CODE_INVALID_RANGE_END,        "Invalid range end"},
     {REG_ERR_CODE_INVALID_PRECEDING_REGEXP, "Invalid preceding regular expression"},
     {REG_ERR_CODE_REGEXP_TOO_BIG,           "Regular expression too big"},

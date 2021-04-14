@@ -2,6 +2,8 @@
 
 #include <regex.h>
 
+//#define MULTI_REPEAT    //EREでs**やs{2}{3}をサポートする
+
 //#define RE_DUP_MAX 0x7fff //regexライブラリの最大値(32767)。
                             //\(1,32767\)をコンパイルするとメモリ2GB以上消費する。
 #undef  RE_DUP_MAX
