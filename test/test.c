@@ -69,25 +69,23 @@ static int test_regexp(test_t *test_data) {
             pmatch1[i].rm_so==pmatch2[i].rm_so && pmatch1[i].rm_eo==pmatch2[i].rm_eo);
         if (ret1 != ret2 || ret1 != test_data->expect || !match_sub || nmatch1!=nmatch2) result = 0;
         if (result==0 || (test_data->cflags&REG_DUMP)) {
-            printf("%s: line=%d[%d]: ret=%d:%d text='%s', regexp='%s', nmatch=%ld:%ld, cflags=%x\n", 
+            printf("%s: line=%d[%d]: ret=%d:%d text='%s', regexp='%s', nmatch=%ld:%ld, cflags=%x\n",
                 result==0?"ERROR":"DUMP", n, i, ret1, ret2, text, regexp, nmatch1, nmatch2, test_data->cflags);
             if (!match_sub || (test_data->cflags&REG_DUMP)) {
                 printf("  pmatch1=[%d,%d], pmatch2=[%d,%d], expected_match='%s'\n",
-                    pmatch1[i].rm_so, pmatch1[i].rm_eo, 
+                    pmatch1[i].rm_so, pmatch1[i].rm_eo,
                     pmatch2[i].rm_so, pmatch2[i].rm_eo, test_data->match[i]);
             }
         }
     }
-    if (result==0) {
+    if (result==0 || (test_data->cflags&REG_DUMP)) {
         reg_dump(stdout, preg_compile, 2);
-    } else {
-        //printf("DATA: %d regexp='%s'\n", n, regexp);
-        //reg_dump(stdout, preg_compile, 2);
     }
-    if (errcode!=reg_err_info.err_code) {
-        fprintf(stderr, "%d: regex  Error: regexp='%s', errcode=%d, %s\n", n, regexp, errcode, errcode?buf:"");
+    if (errcode!=reg_err_info.err_code || (test_data->cflags&REG_DUMP)) {
+        fprintf(stderr, "%d: regex:  regexp='%s', errcode=%d, %s\n", n, regexp, errcode, errcode?buf:"");
         for (int i=0; i<nmatch1; i++) printf("    pmatch1[%d]=[%d,%d]\n", i, pmatch1[i].rm_so, pmatch1[i].rm_eo);
-        fprintf(stderr, "%d: regexp Error: regexp='%s', errcode=%d, %s\n", n, regexp, reg_err_info.err_code, reg_err_info.err_msg);
+        fprintf(stderr, "%d: regexp: regexp='%s', errcode=%d, %s\n", n, regexp, reg_err_info.err_code, reg_err_info.err_msg);
+        for (int i=0; i<nmatch2; i++) printf("    pmatch2[%d]=[%d,%d]\n", i, pmatch2[i].rm_so, pmatch2[i].rm_eo);
     }
 
     free(pmatch1);

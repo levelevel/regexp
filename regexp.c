@@ -73,6 +73,14 @@
    If not set, then an unmatched ) is invalid.  */
 //# define RE_UNMATCHED_RIGHT_PAREN_ORD (RE_NO_EMPTY_RANGES << 1)
 
+/* If this bit is set, (...) defines a group, and \( and \) are literals.
+   If not set, \(...\) defines a group, and ( and ) are literals.  */
+//# define RE_NO_BK_PARENS (RE_NO_BK_BRACES << 1)
+
+/* If this bit is set, then | is an alternation operator, and \| is literal.
+   If not set, then \| is an alternation operator, and | is literal.  */
+//# define RE_NO_BK_VBAR (RE_NO_BK_REFS << 1)
+
 /* Syntax bits common to both basic and extended POSIX regex syntax.  */
 //# define _RE_SYNTAX_POSIX_COMMON
 //  (RE_CHAR_CLASSES | RE_DOT_NEWLINE      | RE_DOT_NOT_NULL
@@ -144,8 +152,6 @@ typedef struct {
 //正規表現のコンパイル結果
 typedef struct regcomp {
     array_t *array;         //pattern_t*のアレイ
-    unsigned int match_begin:1;     //^
-    unsigned int match_end  :1;     //$
     unsigned int match_here :1;     //現在位置からマッチさせる
     short nparen;           //()の数（0-9）
     int cflags;             //正規表現のsyntax。RE_*
@@ -174,8 +180,8 @@ static void push_char_set(char_set_t *char_set, char c);
 static void push_char_set_str(char_set_t *char_set, const char *str);
 static pattern_t *new_pattern(pattern_type_t type);
 static reg_compile_t *new_reg_compile(const char *regexp);
-static reg_compile_t *reg_exp(const char *regexp, pattern_type_t mode);
-static reg_stat_t sequence_exp(reg_compile_t *preg_compile);
+static reg_compile_t *reg_exp     (const char *regexp, pattern_type_t mode);
+static reg_compile_t *sequence_exp(const char *regexp, pattern_type_t mode);
 static reg_stat_t repeat_exp  (reg_compile_t *preg_compile);
 static reg_stat_t primary_exp (reg_compile_t *preg_compile);
 static reg_stat_t new_repeat  (reg_compile_t *preg_compile);
@@ -202,6 +208,7 @@ static void reg_set_err(reg_err_code_t err_code);
 #define token_is_close_paren(p) ((g_syntax&RE_NO_BK_PARENS) ? token1_is(p, ')') : token2_is(p, "\\)"))
 #define token_is_plus(p)       (!(g_syntax&RE_BK_PLUS_QM)   ? token1_is(p, '+') : token2_is(p, "\\+"))
 #define token_is_question(p)   (!(g_syntax&RE_BK_PLUS_QM)   ? token1_is(p, '?') : token2_is(p, "\\?"))
+#define token_is_vbar(p)        ((g_syntax&RE_NO_BK_VBAR)   ? token1_is(p, '|') : token2_is(p, "\\|"))
 
 // reg_compile: compile regexp
 // reg_exp      = sequence_exp ( "|" sequence_exp )*                            ERE
@@ -308,41 +315,73 @@ static void push_pattern(reg_compile_t *preg_compile, pattern_t *pat) {
 // sequence_exp = repeat_exp repeat_exp*                                    BRE/ERE
 //戻り値：エラー時はNULLを返し、reg_err_code/reg_err_msgにエラー情報を設定する。
 static reg_compile_t *reg_exp(const char *regexp, pattern_type_t mode) {
-    reg_compile_t *preg_compile = new_reg_compile(regexp);
+    reg_compile_t *preg_compile = sequence_exp(regexp, mode);
     if (preg_compile==NULL) return NULL;
-    preg_compile->mode = mode;
-    preg_compile->prev_pat = NULL;
 
-    reg_stat_t ret = sequence_exp(preg_compile);
-    if (ret==REG_ERR) {
-        reg_compile_free(preg_compile);
-        return NULL;
-    } else if (ret==REG_END) {
-        if (preg_compile->mode==PAT_SUBREG) {
-            assert(token_is_close_paren(preg_compile->p));
-            if (*preg_compile->p=='\\') preg_compile->p++;
-            preg_compile->p++;
-        } else {
-            assert(token1_is(preg_compile->p, '\0'));
+    pattern_t *pat = NULL;
+    reg_compile_t *subreg = preg_compile;
+    while (token_is_vbar(subreg->p)) {
+        //"a|b|c"のパターンは以下の構成とする
+        //reg_compile->array
+        //    [0]pattern(PAT_OR)->or_array
+        //       +[0]reg_compile "a"
+        //       +[1]reg_compile "b"
+        //       +[2]reg_compile "c"
+        if (pat==NULL) {
+            pat = new_pattern(PAT_OR);
+            pat->or_array = new_array(0);
+            subreg->match_here = 1;
+            subreg->ref_num = preg_compile->ref_num;
+            push_array(pat->or_array, subreg);
+            preg_compile = new_reg_compile(regexp);
+            preg_compile->mode = mode;
+            preg_compile->regexp = regexp;
+            push_pattern(preg_compile, pat);
+            push_pattern(preg_compile, new_pattern(PAT_NULL));
         }
-    } else {
-        assert(0);
+        subreg->p++;
+        subreg = sequence_exp(subreg->p, mode);
+        if (subreg==NULL) {
+            reg_compile_free(preg_compile);
+            return NULL;
+        }
+        subreg->match_here = 1;
+        subreg->ref_num = preg_compile->ref_num;
+        push_array(pat->or_array, subreg);
+        preg_compile->p = subreg->p;
     }
 
-    push_pattern(preg_compile, new_pattern(PAT_NULL));
+    if (mode==PAT_SUBREG && token_is_close_paren(preg_compile->p)) {
+        if (*preg_compile->p=='\\') preg_compile->p++;
+        preg_compile->p++;
+    } else {
+        assert(token1_is(preg_compile->p, '\0'));
+    }
+    //reg_dump(stdout, preg_compile, 0);
+
     return preg_compile;
 }
 
 // sequence_exp = repeat_exp*                                               BRE/ERE
 // repeat_exp   = primary_exp ( "*" | "\{" repeat_range "\}" )?             BRE
 //              | repeat_exp ( "*" | "+" | "?" | "{" repeat_range "}" )?        ERE
-//戻り値：エラー時はreg_err_code/reg_err_msgにエラー情報を設定する。
-static reg_stat_t sequence_exp(reg_compile_t *preg_compile) {
+//戻り値：エラー時はNULLを返し、reg_err_code/reg_err_msgにエラー情報を設定する。
+static reg_compile_t *sequence_exp(const char *regexp, pattern_type_t mode) {
+    reg_compile_t *preg_compile = new_reg_compile(regexp);
+    preg_compile->mode = mode;
     reg_stat_t ret = REG_OK;
+
     while (ret==REG_OK) {
         ret = repeat_exp(preg_compile);
     }
-    return ret;
+
+    if (ret==REG_ERR) {
+        reg_compile_free(preg_compile);
+        preg_compile = NULL;
+    } else {
+        push_pattern(preg_compile, new_pattern(PAT_NULL));
+    }
+    return preg_compile;
 }
 
 // repeat_exp   = primary_exp ( "*" | "\{" repeat_range "\}" )?             BRE
@@ -422,9 +461,9 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
                  && ((g_syntax&RE_CONTEXT_INVALID_OPS) || (preg_compile->prev_pat && preg_compile->prev_pat->type!=PAT_CARET)))
                 || token_is_open_brace(preg_compile->p)) {
             reg_set_err(REG_ERR_CODE_INVALID_PRECEDING_REGEXP);
-        } else if (token_is_open_paren(preg_compile->p)) {
+        } else if (token_is_open_paren(preg_compile->p)) {          //'('
             return new_subreg(preg_compile);
-        } else if (token_is_close_paren(preg_compile->p)) {
+        } else if (token_is_close_paren(preg_compile->p)) {         //')'
             if (preg_compile->mode==PAT_SUBREG) return REG_END;
             if (g_syntax&RE_UNMATCHED_RIGHT_PAREN_ORD) goto L_CHAR;  //EREでは単独の')'はリテラル
             reg_set_err(REG_ERR_CODE_UNMATCHED_PAREN);
@@ -437,6 +476,8 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
                 pat->ref_num = num;
                 preg_compile->p++;
             }
+        } else if (token_is_vbar(preg_compile->p)) {
+            return REG_END;
         } else if (token1_is(preg_compile->p, '\\') /*&& strchr(SPECIAL_CHARS, p[1])*/) {
             pat = new_pattern(PAT_CHAR);
             pat->c = preg_compile->p[1];
@@ -723,7 +764,6 @@ static int reg_exec_main(reg_compile_t *preg_compile, const char *text) {
     const char *rm_ep;
     pattern_t **pat = (pattern_t**)preg_compile->array->buckets;
     if (preg_compile->match_here) {
-        if (preg_compile->match_begin && g_text!=text) return 1;
         if (reg_match_here(pat, text, &rm_ep)) {
             set_match(preg_compile->ref_num, text, rm_ep);
             return 0;
@@ -797,6 +837,15 @@ static int reg_match_pat(pattern_t *pat, const char *text, int *len) {
         }
         return 0;
     }
+    case PAT_OR:
+        for (int i=0; i<num_array(pat->or_array); i++) {
+            reg_compile_t *subreg = peek_array(pat->or_array, i);
+            if (reg_exec_main(subreg, text)==0) {
+                *len = g_pmatch[subreg->ref_num].rm_eo - g_pmatch[subreg->ref_num].rm_so;
+                return 1;
+            }
+        }
+        return 0;
     case PAT_CARET:
         if (text==g_text) {
             *len = 0;
@@ -862,9 +911,8 @@ void reg_dump(FILE *fp, reg_compile_t *preg_compile, int indent) {
         fprintf(stderr, "preg_compile=(nul)\n");
         return;
     }
-    fprintf(fp, "regexp='%s', match_begin=%d, match_end=%d, match_here=%d, nparen=%d\n",
-        preg_compile->regexp, preg_compile->match_begin, preg_compile->match_end,
-        preg_compile->match_here, preg_compile->nparen);
+    fprintf(fp, "regexp='%s', match_here=%d, nparen=%d, ref_num=%d\n",
+        preg_compile->regexp, preg_compile->match_here, preg_compile->nparen, preg_compile->ref_num);
     array_t *array = preg_compile->array;
     for (int i=0; i<array->num; i++) {
         pattern_t *pat = array->buckets[i];
@@ -877,6 +925,10 @@ void reg_dump(FILE *fp, reg_compile_t *preg_compile, int indent) {
         case PAT_SUBREG:  fprintf(fp, "\n");
                           reg_dump(fp, pat->regcomp, indent+2); break;
         case PAT_BACKREF: fprintf(fp, "\\%d\n", pat->ref_num); break;
+        case PAT_OR:      fprintf(fp, "\n");
+                          for (int i=0; i<num_array(pat->or_array); i++)
+                            reg_dump(fp, peek_array(pat->or_array, i), indent+2);
+                          break;
         default:          fprintf(fp, "\n"); break;
         }
     }
