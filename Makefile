@@ -10,7 +10,7 @@ TEST_OBJS=$(TEST_SRC:.c=.o)
 TEST=$(TEST_SRC:.c=)
 
 $(OBJS): $(SRCS) $(HEADS)
-$(TEST_OBJS): $(TEST_SRC) $(TEST_HEAD)
+$(TEST_OBJS): $(TEST_SRC) $(TEST_HEAD) $(HEADS)
 
 $(TEST): $(TEST_OBJS) $(OBJS)
 	$(CC) $(CFLAGS) -I. -o $@ $^ $(LDFLAGS)

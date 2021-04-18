@@ -1,9 +1,9 @@
-// reg_exp      = sequence_exp ( "|" sequence_exp )*                            ERE
-//              | "^"? sequence_exp* "$"?                                   BRE
-// sequence_exp = repeat_exp*                                               BRE/ERE
-// repeat_exp   = primary_exp ( "*" | "\{" repeat_range "\}" )?             BRE
-//              | repeat_exp ( "*" | "+" | "?" | "{" repeat_range "}" )?        ERE
-// repeat_range = num                                                       BRE/ERE
+// reg_exp      = sequence_exp ( "|" sequence_exp )*                                ERE
+//              | "^"? sequence_exp* "$"?                                       BRE
+// sequence_exp = repeat_exp*                                                   BRE/ERE
+// repeat_exp   = primary_exp ( "*" | "\+" | "\?" | "\{" repeat_range "\}" )?   BRE
+//              | repeat_exp ( "*" | "+" | "?" | "{" repeat_range "}" )?            ERE
+// repeat_range = num                                                           BRE/ERE
 //              | num? "," num
 //              | num "," num?
 // primary_exp  = char                                                      BRE/ERE
@@ -13,7 +13,7 @@
 //              | "[^" char_set "]"                                         BRE/ERE
 //              | "\(" reg_exp "\)"                                         BRE
 //              | "(" reg_exp ")"                                               ERE
-//              | "\" ( "1" | ... | "9" )                                   BRE
+//              | "\" ( "1" | ... | "9" )                                   BRE/ERE
 //              = "^"                                                           ERE
 //              = "$"                                                           ERE
 // char_set     = char char_set*                                            BRE/ERE
@@ -187,7 +187,7 @@ static int reg_exec_main(reg_compile_t *preg_compile, const char *text);
 static int reg_match_here(pattern_t **pat, const char *text, const char **rm_ep);
 static void set_match(int idx, const char *rm_sp, const char *rm_ep);
 static int reg_match_pat(pattern_t *pat, const char *text, int *len);
-static int reg_match_repeat(pattern_t *c, pattern_t *rep, pattern_t **pat, const char *text, const char **rm_ep);
+static int reg_match_repeat(pattern_t **pat, const char *text, const char **rm_ep);
 static void reg_pattern_free(pattern_t *pat);
 
 static void reg_set_err(reg_err_code_t err_code);
@@ -266,8 +266,40 @@ static reg_compile_t *new_reg_compile(const char *regexp) {
     return preg_compile;
 }
 
+// push_pattern
+// patがPAT_REPEATの場合、直前の要素の前に挿入する。
 static void push_pattern(reg_compile_t *preg_compile, pattern_t *pat) {
-    push_array(preg_compile->array, pat);
+    if (pat->type==PAT_REPEAT) {
+        int num = num_array(preg_compile->array);
+        assert(num>0);
+#ifdef MULTI_REPEAT_SUBREG
+        if (num<=1 || ((pattern_t*)peek_array(preg_compile->array, num-2))->type!=PAT_REPEAT) {
+            push_array(preg_compile->array, peek_array(preg_compile->array, num-1));
+            put_array (preg_compile->array, num-1, pat);
+        } else {
+            pattern_t *pat_subreg = new_pattern(PAT_SUBREG);
+            reg_compile_t *subreg;
+            pat_subreg->regcomp = subreg = new_reg_compile(NULL);
+            subreg->match_here = 1;
+            push_array(subreg->array, peek_array(preg_compile->array, num-2));
+            push_array(subreg->array, peek_array(preg_compile->array, num-1));
+            push_array(subreg->array, new_pattern(PAT_NULL));
+            put_array (preg_compile->array, num-1, pat_subreg);
+            put_array (preg_compile->array, num-2, pat);
+        }
+        //reg_dump(stdout, preg_compile, 0);
+#else
+        int idx = num-2;
+        while (idx>=0 && ((pattern_t*)peek_array(preg_compile->array, idx))->type==PAT_REPEAT) idx--;
+        idx ++;
+        for (int i=num-1; i>=idx; i--) {
+            put_array(preg_compile->array, i+1, peek_array(preg_compile->array, i));
+        }
+        put_array(preg_compile->array, idx, pat);
+#endif
+    } else {
+        push_array(preg_compile->array, pat);
+    }
     preg_compile->prev_pat = pat;
 }
 
@@ -722,8 +754,9 @@ static int reg_match_here(pattern_t **pat, const char *text, const char **rm_ep)
         *rm_ep = text;
         return 1;
     }
-    if (pat[1]->type==PAT_REPEAT)
-        return reg_match_repeat(pat[0], pat[1], pat+2, text, rm_ep);
+    if (pat[0]->type==PAT_REPEAT) {
+        return reg_match_repeat(pat, text, rm_ep);
+    }
     int len;
     if (reg_match_pat(pat[0], text, &len))
         return reg_match_here(pat+1, text+len, rm_ep);
@@ -775,19 +808,21 @@ static int reg_match_pat(pattern_t *pat, const char *text, int *len) {
         }
         return 0;
     default:
-        return 0;
+        assert(0);
     }
     return 0;
 }
 
 // reg_match_repeat: search for c\{m,n\} regexp at beginning of text
-static int reg_match_repeat(pattern_t *c, pattern_t *rep, pattern_t **pat, const char *text, const char **rm_ep) {
+static int reg_match_repeat(pattern_t **pat, const char *text, const char **rm_ep) {
+    pattern_t *rep = pat[0];
+    pattern_t *c   = pat[1];
     assert(rep->type==PAT_REPEAT);
     int cnt = 0;
     int ret = 0;
     int len;
     do {    /* a \{0,n\} matches zero or more instances */
-        if (cnt++>=rep->min && reg_match_here(pat, text, rm_ep)) ret = 1;   //最短一致ならここでreturn 1する
+        if (cnt++>=rep->min && reg_match_here(pat+2, text, rm_ep)) ret = 1;   //最短一致ならここでreturn 1する
     } while (reg_match_pat(c, text, &len) && (text=text+len) && cnt<=rep->max);
     return ret;
 }

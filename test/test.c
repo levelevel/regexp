@@ -17,7 +17,9 @@ typedef struct {
     const int eflags;       //REG_NOTBOL|REG_NOTEOL|REG_STARTEND
 } test_t;
 #define REG_BASIC   0
-#define REG_BRE_ERE 0xf000  //cflagsでBER/ERB共通テスト項目（REG_EXTENDED有無両方でテストする）
+#define REG_BRE_ERE 0x10000     //cflagsでBER/ERB共通テスト項目（REG_EXTENDED有無両方でテストする）
+#define REG_DUMP    0x20000     //強制的にダンプする
+#define REG_FLAGS_MASK 0xff
 
 test_t data[] = {
     #include "test_dat.h"
@@ -34,9 +36,10 @@ static int test_regexp(test_t *test_data) {
     int result = 1; //1:OK, 0:NG
     char buf[1024];
 
+    //regex
     regmatch_t *pmatch1 = NULL;
     size_t nmatch1 = 0;
-    errcode = regcomp(&preg, regexp, test_data->cflags);
+    errcode = regcomp(&preg, regexp, test_data->cflags&REG_FLAGS_MASK);
     if (errcode!=0) {
         regerror(errcode, &preg, buf, sizeof(buf));
         ret1 = -1;
@@ -46,9 +49,10 @@ static int test_regexp(test_t *test_data) {
         ret1 = regexec(&preg, text, nmatch1, pmatch1, test_data->eflags);
     }
 
+    //regexp
     regmatch_t *pmatch2 = NULL;
     size_t nmatch2 = 0;
-    preg_compile = reg_compile(regexp, &nmatch2, test_data->cflags);
+    preg_compile = reg_compile(regexp, &nmatch2, test_data->cflags&REG_FLAGS_MASK);
     if (preg_compile==NULL) {
         ret2 = -1;
     } else {
@@ -63,15 +67,15 @@ static int test_regexp(test_t *test_data) {
             (len==pmatch2[i].rm_eo-pmatch2[i].rm_so &&
             strncmp(test_data->text+pmatch2[i].rm_so, test_data->match[i], len)==0 &&
             pmatch1[i].rm_so==pmatch2[i].rm_so && pmatch1[i].rm_eo==pmatch2[i].rm_eo);
-        if (ret1 != ret2 || ret1 != test_data->expect || !match_sub || nmatch1!=nmatch2) {
-            printf("ERROR: line=%d[%d]: ret=%d:%d text='%s', regexp='%s', nmatch=%ld:%ld, cflags=%x\n", 
-                n, i, ret1, ret2, text, regexp, nmatch1, nmatch2, test_data->cflags);
-            if (!match_sub) {
+        if (ret1 != ret2 || ret1 != test_data->expect || !match_sub || nmatch1!=nmatch2) result = 0;
+        if (result==0 || (test_data->cflags&REG_DUMP)) {
+            printf("%s: line=%d[%d]: ret=%d:%d text='%s', regexp='%s', nmatch=%ld:%ld, cflags=%x\n", 
+                result==0?"ERROR":"DUMP", n, i, ret1, ret2, text, regexp, nmatch1, nmatch2, test_data->cflags);
+            if (!match_sub || (test_data->cflags&REG_DUMP)) {
                 printf("  pmatch1=[%d,%d], pmatch2=[%d,%d], expected_match='%s'\n",
                     pmatch1[i].rm_so, pmatch1[i].rm_eo, 
                     pmatch2[i].rm_so, pmatch2[i].rm_eo, test_data->match[i]);
             }
-            result = 0;
         }
     }
     if (result==0) {
