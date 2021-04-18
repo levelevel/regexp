@@ -74,9 +74,7 @@
     {__LINE__, "a^bc",      "a^b",              {"a^b"},            1, 0, REG_BASIC},
     {__LINE__, "a^bc",      "a^b",              {""},               1, 1, REG_EXTENDED},
     {__LINE__, "abc",       "a**",              {""},               1,-1, REG_BASIC},
-#ifdef MULTI_REPEAT
     {__LINE__, "abc",       "a**",              {"a"},              1, 0, REG_EXTENDED},//EREでは多重repeatが許される
-#endif
     {__LINE__, "abc",       ".*",               {"abc"},            1, 0, REG_BRE_ERE},
     {__LINE__, "abc",       "a.*",              {"abc"},            1, 0, REG_BRE_ERE},
     {__LINE__, "abc",       "a.*c",             {"abc"},            1, 0, REG_BRE_ERE},
@@ -141,12 +139,13 @@
     {__LINE__, "{}",        "\\{\\}",           {"{}"},             1, 0, REG_EXTENDED},
 
     {__LINE__, "1234567",   "[0-9]\\{2\\}\\{3\\}",  {""},           1,-1, REG_BASIC},
-#ifdef MULTI_REPEAT
     {__LINE__, "1234567",   "[0-9]{2}{3}",      {"123456"},         1, 0, REG_EXTENDED},//EREでは多重repeatが許される
     {__LINE__, "1234567",   "([0-9]{2}){3}",    {"123456","56"},    2, 0, REG_EXTENDED},
-    {__LINE__, "1234567",   "2[3-9]{2}+",       {"23456",},         1, 0, REG_EXTENDED},
-    {__LINE__, "1234567",   "2[3-9]{2}{3}",     {"",},              1, 1, REG_EXTENDED},
-#endif
+    {__LINE__, "1234567",   "[3-9]{2}+",        {"3456",},          1, 0, REG_EXTENDED},
+    {__LINE__, "1234567",   "[3-9]{2}{3}",      {"",},              1, 1, REG_EXTENDED},
+    {__LINE__, "aaaaa",     "a{2}+",            {"aaaa",},          1, 0, REG_EXTENDED},
+    {__LINE__, "aaaaaaa",   "a{2,4}+",          {"aaaaaaa",},       1, 0, REG_EXTENDED},
+    {__LINE__, "aaaaaaaa",  "^a{2,4}+$",        {"aaaaaaaa",},      1, 0, REG_EXTENDED},
 
     {__LINE__, "abc",       "a{0,32768}",       {"a"},              1,-1, REG_EXTENDED},
     {__LINE__, "abc",       "a{32768}",         {"a"},              1,-1, REG_EXTENDED},

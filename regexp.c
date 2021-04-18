@@ -23,7 +23,7 @@
 //              | "lower"       #[a-z]                                      POSIX
 //              | "alpha"       #[A-Za-z]                                   POSIX
 //              | "alnum"       #[A-Za-z0-9]                                POSIX
-//              | "word"        #[A-Za-z0-9_]                           
+//              | "word"        #[A-Za-z0-9_]
 //              | "digit"       #[0-9]                                      POSIX
 //              | "xdigit"      #[0-9A-Fa-f]                                POSIX
 //              | "punct"       #[]!"#$%&'()*+,-./:;<=>?@[\^_`{|}~-]        POSIX
@@ -35,7 +35,7 @@
 
 // https://www.cs.princeton.edu/courses/archive/spr09/cos333/beautiful.html
 // A Regular Expression Matcher
-// Code by Rob Pike 
+// Code by Rob Pike
 
 //regex.h -------------------------------------------------------------
 /* If this bit is set, then ^ and $ are always anchors (outside bracket
@@ -78,7 +78,7 @@
 //  (RE_CHAR_CLASSES | RE_DOT_NEWLINE      | RE_DOT_NOT_NULL
 //   | RE_INTERVALS  | RE_NO_EMPTY_RANGES)
 //
-//# define RE_SYNTAX_POSIX_BASIC						
+//# define RE_SYNTAX_POSIX_BASIC
 //  (_RE_SYNTAX_POSIX_COMMON | RE_BK_PLUS_QM | RE_CONTEXT_INVALID_DUP)
 //
 //# define RE_SYNTAX_POSIX_EXTENDED
@@ -115,7 +115,7 @@ typedef enum {
 } pattern_type_t;
 
 static const char *pattern_type_str[] = {
-    "0", "PAT_CHAR", "PAT_CHARSET", "PAT_DOT", "PAT_REPEAT", 
+    "0", "PAT_CHAR", "PAT_CHARSET", "PAT_DOT", "PAT_REPEAT",
     "PAT_SUBREG", "PAT_BACKREF", "PAT_OR", "PAT_CARET", "PAT_DOLLAR", "PAT_NULL"
 };
 
@@ -482,7 +482,7 @@ static reg_stat_t new_subreg(reg_compile_t *preg_compile) {
     if (pat->regcomp==NULL) {
         reg_pattern_free(pat);
         return REG_ERR;
-    } 
+    }
     pat->regcomp->match_here = 1;
     push_pattern(preg_compile, pat);
     preg_compile->p = pat->regcomp->p;
@@ -616,7 +616,7 @@ static reg_stat_t new_char_set(reg_compile_t *preg_compile) {
 //              | "lower"       #[a-z]                                      POSIX
 //              | "alpha"       #[A-Za-z]                                   POSIX
 //              | "alnum"       #[A-Za-z0-9]                                POSIX
-//              | "word"        #[A-Za-z0-9_]                           
+//              | "word"        #[A-Za-z0-9_]
 //              | "digit"       #[0-9]                                      POSIX
 //              | "xdigit"      #[0-9A-Fa-f]                                POSIX
 //              | "punct"       #[]!"#$%&'()*+,-./:;<=>?@[\^_`{|}~-]        POSIX
@@ -728,7 +728,6 @@ static int reg_exec_main(reg_compile_t *preg_compile, const char *text) {
             set_match(preg_compile->ref_num, text, rm_ep);
             return 0;
         }
-        return 1;
     } else {
         do {    /* must look even if string is empty */
             if (reg_match_here(pat, text, &rm_ep)) {
@@ -737,6 +736,7 @@ static int reg_exec_main(reg_compile_t *preg_compile, const char *text) {
             }
         } while (*text++!='\0');
     }
+    set_match(0, g_text, g_text);   //0クリア
     return 1;
 }
 
@@ -750,12 +750,14 @@ static void set_match(int idx, const char *rm_sp, const char *rm_ep) {
 
 // reg_match_here: search for regexp at beginning of text
 static int reg_match_here(pattern_t **pat, const char *text, const char **rm_ep) {
-    if (pat[0]->type==PAT_NULL) {
+    switch (pat[0]->type) {
+    case PAT_NULL:
         *rm_ep = text;
         return 1;
-    }
-    if (pat[0]->type==PAT_REPEAT) {
+    case PAT_REPEAT:
         return reg_match_repeat(pat, text, rm_ep);
+    default:
+        break;
     }
     int len;
     if (reg_match_pat(pat[0], text, &len))

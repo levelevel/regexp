@@ -2,7 +2,6 @@
 
 #include <regex.h>
 
-#define MULTI_REPEAT            //EREで多重繰り返し（s**やs{2}{3}）をサポートする
 #define MULTI_REPEAT_SUBREG     //多重繰り返しをSUBREGで表現する（(s*)*）
 
 //#define RE_DUP_MAX 0x7fff //regexライブラリの最大値(32767)。
