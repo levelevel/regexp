@@ -4,8 +4,9 @@ regex互換の基本正規表現と拡張正規表現をサポート。
 
 ## TODO
 
-- REG_ICASE
 - REG_NWLINE
+- REG_NOTBOL
+- REG_NOTEOL
 
 ## 参考資料
 

@@ -38,6 +38,7 @@
 // Code by Rob Pike
 
 //regex.h -------------------------------------------------------------
+
 /* If this bit is set, then ^ and $ are always anchors (outside bracket
      expressions, of course).
    If this bit is not set, then it depends:
@@ -94,6 +95,29 @@
 //   | RE_CONTEXT_INDEP_OPS   | RE_NO_BK_BRACES
 //   | RE_NO_BK_PARENS        | RE_NO_BK_VBAR
 //   | RE_CONTEXT_INVALID_OPS | RE_UNMATCHED_RIGHT_PAREN_ORD)
+
+/* POSIX 'cflags' bits (i.e., information for 'regcomp').  */
+/* If this bit is set, then use extended regular expression syntax.
+   If not set, then use basic regular expression syntax.  */
+//#define REG_EXTENDED 1
+/* If this bit is set, then ignore case when matching.
+   If not set, then case is significant.  */
+//#define REG_ICASE (1 << 1)
+/* If this bit is set, then anchors do not match at newline
+     characters in the string.
+   If not set, then anchors do match at newlines.  */
+//#define REG_NEWLINE (1 << 2)
+
+/* POSIX 'eflags' bits (i.e., information for regexec).  */
+/* If this bit is set, then the beginning-of-line operator doesn't match
+     the beginning of the string (presumably because it's not the
+     beginning of a line).
+   If not set, then the beginning-of-line operator does match the
+     beginning of the string.  */
+//#define REG_NOTBOL 1
+/* Like REG_NOTBOL, except for the end-of-line.  */
+//#define REG_NOTEOL (1 << 1)
+
 //regex.h -------------------------------------------------------------
 
 #include <stdio.h>
@@ -240,7 +264,7 @@ static void push_char_set(char_set_t *char_set, char c) {
         char_set->chars = realloc(char_set->chars, char_set->size*sizeof(char));
         assert(char_set->chars);
     }
-    char_set->chars[len++] = c;
+    char_set->chars[len++] = (g_cflags&REG_ICASE)?toupper(c):c;
     char_set->chars[len] = '\0';
 }
 //push_char_set_str: 文字セットに文字列を追加する。
@@ -496,7 +520,8 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
         } else {
             L_CHAR:
             pat = new_pattern(PAT_CHAR);
-            pat->c = preg_compile->p[0];
+            char c = preg_compile->p[0];
+            pat->c = (g_cflags&REG_ICASE)?toupper(c):c;
         }
         if (pat) {
             push_pattern(preg_compile, pat);
@@ -678,16 +703,19 @@ static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_s
         regexp += 5;
     } else if (strncmp(regexp, "alpha", 5)==0) {
         for (int c='A'; c<='Z'; c++) push_char_set(char_set, c);
-        for (int c='a'; c<='z'; c++) push_char_set(char_set, c);
+        if (!(g_cflags&REG_ICASE))
+            for (int c='a'; c<='z'; c++) push_char_set(char_set, c);
         regexp += 5;
     } else if (strncmp(regexp, "alnum", 5)==0) {
         for (int c='A'; c<='Z'; c++) push_char_set(char_set, c);
-        for (int c='a'; c<='z'; c++) push_char_set(char_set, c);
+        if (!(g_cflags&REG_ICASE))
+            for (int c='a'; c<='z'; c++) push_char_set(char_set, c);
         for (int c='0'; c<='9'; c++) push_char_set(char_set, c);
         regexp += 5;
     } else if (strncmp(regexp, "word", 4)==0) {
         for (int c='A'; c<='Z'; c++) push_char_set(char_set, c);
-        for (int c='a'; c<='z'; c++) push_char_set(char_set, c);
+        if (!(g_cflags&REG_ICASE))
+            for (int c='a'; c<='z'; c++) push_char_set(char_set, c);
         for (int c='0'; c<='9'; c++) push_char_set(char_set, c);
         push_char_set(char_set, '_');
         regexp += 4;
@@ -697,7 +725,8 @@ static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_s
     } else if (strncmp(regexp, "xdigit", 6)==0) {
         for (int c='0'; c<='9'; c++) push_char_set(char_set, c);
         for (int c='A'; c<='F'; c++) push_char_set(char_set, c);
-        for (int c='a'; c<='f'; c++) push_char_set(char_set, c);
+        if (!(g_cflags&REG_ICASE))
+            for (int c='a'; c<='f'; c++) push_char_set(char_set, c);
         regexp += 6;
     } else if (strncmp(regexp, "punct", 5)==0) {
         push_char_set_str(char_set, "#[]!\"#$%&'()*+,-./:;<=>?@[\\^_`{|}~-]");
@@ -747,6 +776,7 @@ int reg_exec(reg_compile_t *preg_compile, const char *text, size_t nmatch, regma
     (void)eflags;
     g_text = text;
     g_nparen = 0;
+    g_cflags = preg_compile->cflags;
     if (pmatch) {
         memset(pmatch, 0, sizeof(pmatch[0])*nmatch);
         g_nmatch = nmatch;
@@ -810,10 +840,10 @@ static int reg_match_pat(pattern_t *pat, const char *text, int *len) {
     *len = 1;   //patにマッチしたtextの長さ
     switch (pat->type) {
     case PAT_CHAR:
-        return pat->c == *text;
+        return pat->c == ((g_cflags&REG_ICASE)?toupper(*text):*text);
     case PAT_CHARSET:
         if (*text == '\0') return 0;
-        if (strchr(pat->cset.chars, *text))
+        if (strchr(pat->cset.chars, (g_cflags&REG_ICASE)?toupper(*text):*text))
             return !pat->cset.reverse;
         return pat->cset.reverse;
     case PAT_DOT:
@@ -905,14 +935,41 @@ static void reg_pattern_free(pattern_t *pat) {
     free(pat);
 }
 
+typedef struct {
+    int num;
+    const char *name;
+} flags_tbl_t;
+#define REG_TBL(s) {s, #s}
+static flags_tbl_t cflags_tbl[] = {
+    REG_TBL(REG_EXTENDED),
+    REG_TBL(REG_ICASE),
+    REG_TBL(REG_NEWLINE),
+};
+static const char*cflags2str(int cflags) {
+    static char buf[256];
+    char *p = buf;
+    int cnt = 0;
+    *p = '\0';
+    for (int i=0; i<sizeof(cflags_tbl)/sizeof(cflags_tbl[0]); i++) {
+        if (cflags&cflags_tbl[i].num) {
+            if (cnt++) *p++ = '|';
+            strcpy(p, cflags_tbl[i].name);
+            p += strlen(cflags_tbl[i].name);
+        }
+    }
+    return buf;
+}
+
+//reg_dump: dump compiles regexp
 void reg_dump(FILE *fp, reg_compile_t *preg_compile, int indent) {
     fprintf(stderr, "%*s", indent, ""); // indent個の空白を出力
     if (preg_compile==NULL) {
         fprintf(stderr, "preg_compile=(nul)\n");
         return;
     }
-    fprintf(fp, "regexp='%s', match_here=%d, nparen=%d, ref_num=%d\n",
-        preg_compile->regexp, preg_compile->match_here, preg_compile->nparen, preg_compile->ref_num);
+    fprintf(fp, "regexp='%s', match_here=%d, nparen=%d, ref_num=%d, cflags=%s\n",
+        preg_compile->regexp, preg_compile->match_here, preg_compile->nparen, preg_compile->ref_num,
+        cflags2str(preg_compile->cflags));
     array_t *array = preg_compile->array;
     for (int i=0; i<array->num; i++) {
         pattern_t *pat = array->buckets[i];

@@ -258,4 +258,12 @@
     {__LINE__, "abc",        "[:alpha:]*",       {"a"},             1, 0, REG_BRE_ERE},
     {__LINE__, "abc",        "[[:Alpha:]]*",     {""},              1,-1, REG_BRE_ERE},
     {__LINE__, "abc",        "[[:alpha]]*",      {""},              1,-1, REG_BRE_ERE},
+
+    {__LINE__, "aBc",       "aBc",               {"aBc"},           1, 0, REG_BRE_ERE|REG_ICASE},
+    {__LINE__, "aBc",       "Abc",               {"aBc"},           1, 0, REG_BRE_ERE|REG_ICASE},
+    {__LINE__, "aBc",       "[a-z]*",            {"aBc"},           1, 0, REG_BRE_ERE|REG_ICASE},
+    {__LINE__, "aBc",       "[^a-z]+",           {""},              1, 1, REG_BRE_ERE|REG_ICASE},
+    {__LINE__, "aBc",       "[^A-Z]+",           {""},              1, 1, REG_BRE_ERE|REG_ICASE},
+    {__LINE__, "aBc",       "[[:lower:]]*",      {"aBc"},           1, 0, REG_BRE_ERE|REG_ICASE},
+    {__LINE__, "aBc",       "[[:alpha:]]*",      {"aBc"},           1, 0, REG_BRE_ERE|REG_ICASE},
 //}

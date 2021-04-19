@@ -61,6 +61,7 @@ static int test_regexp(test_t *test_data) {
         ret2 = reg_exec(preg_compile, text, nmatch2, pmatch2, test_data->eflags);
     }
 
+    int dump_flag = test_data->cflags&REG_DUMP;
     for (int i=0; i<test_data->nmatch; i++) {
         int len = strlen(test_data->match[i]);
         int match_sub = ret1<0 || ret2<0 ||
@@ -68,17 +69,17 @@ static int test_regexp(test_t *test_data) {
             strncmp(test_data->text+pmatch2[i].rm_so, test_data->match[i], len)==0 &&
             pmatch1[i].rm_so==pmatch2[i].rm_so && pmatch1[i].rm_eo==pmatch2[i].rm_eo);
         if (ret1 != ret2 || ret1 != test_data->expect || !match_sub || nmatch1!=nmatch2) result = 0;
-        if (result==0 || (test_data->cflags&REG_DUMP)) {
+        if (result==0 || dump_flag) {
             printf("%s: line=%d[%d]: ret=%d:%d text='%s', regexp='%s', nmatch=%ld:%ld, cflags=%x\n",
                 result==0?"ERROR":"DUMP", n, i, ret1, ret2, text, regexp, nmatch1, nmatch2, test_data->cflags);
-            if (!match_sub || (test_data->cflags&REG_DUMP)) {
+            if (1 || !match_sub || dump_flag) {
                 printf("  pmatch1=[%d,%d], pmatch2=[%d,%d], expected_match='%s'\n",
                     pmatch1[i].rm_so, pmatch1[i].rm_eo,
                     pmatch2[i].rm_so, pmatch2[i].rm_eo, test_data->match[i]);
             }
         }
     }
-    if (result==0 || (test_data->cflags&REG_DUMP)) {
+    if (result==0 || dump_flag) {
         reg_dump(stdout, preg_compile, 2);
     }
     if (errcode!=reg_err_info.err_code || (test_data->cflags&REG_DUMP)) {
