@@ -10,7 +10,7 @@ typedef struct {
     const int no;           //テストNo:行番号
     const char *text;       //検索文字列
     const char *regexp;     //正規表現
-    const char *match[10];  //マッチした文字列の配列（全体＋グループ分）
+    const char *match[16];  //マッチした文字列の配列（全体＋グループ分）
     const int nmatch;       //グループの数
     const int expect;       //戻り値 0:OK, 1:不一致, -1:コンパイルエラー
           int cflags;       //REG_EXTENDED|REG_ICASE|REG_NEWLINE|REG_NOSUB

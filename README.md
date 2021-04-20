@@ -2,6 +2,12 @@
 
 POSIX(regex)互換の基本正規表現(BRE)と拡張正規表現(ERE)をサポート。
 
+## TODO
+
+- バイト列対応（nulコードを扱えるようにする）
+- メモリ安全性の向上（固定長配列など）
+- パターン中の複数文字の連続を文字列に変換
+
 ## 参考資料
 
 - [A Regular Expression Matcher, Code by Rob Pike](https://www.cs.princeton.edu/courses/archive/spr09/cos333/beautiful.html)

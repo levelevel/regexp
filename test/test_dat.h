@@ -246,8 +246,10 @@
     {__LINE__, "abc123",    "([A-Z]|[0-9])+",   {"123","3"},        2, 0, REG_EXTENDED},
     {__LINE__, "abc123",    "([A-Z]|[0-9]){4}", {""},               1, 1, REG_EXTENDED},
     {__LINE__, "abc",       "(a)(c|b)(b|c)",    {"abc","a","b","c"},4, 0, REG_EXTENDED},
+    {__LINE__, "12345678910","(1)(2)(3)(4)(5)(6)(7)(8)(9)(10)",
+        {"12345678910","1","2","3","4","5","6","7","8","9","10"},  11, 0, REG_EXTENDED},
 
-    {__LINE__, "XYZ123_",    "[[:upper:]]*",      {"XYZ"},           1, 0, REG_BRE_ERE},
+    {__LINE__, "XYZ123_",    "[[:upper:]]*",      {"XYZ"},          1, 0, REG_BRE_ERE},
     {__LINE__, "abcXYZ123_", "[[:upper:][:lower:]]*", {"abcXYZ"},   1, 0, REG_BRE_ERE},
     {__LINE__, "abcXYZ123_", "[[:alpha:]]*",     {"abcXYZ"},        1, 0, REG_BRE_ERE},
     {__LINE__, "abcXYZ123_", "[[:alnum:]]*",     {"abcXYZ123"},     1, 0, REG_BRE_ERE},

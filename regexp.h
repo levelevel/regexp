@@ -2,8 +2,6 @@
 
 #include <regex.h>
 
-#define MULTI_REPEAT_SUBREG     //多重繰り返しをSUBREGで表現する（(s*)*）
-
 //#define RE_DUP_MAX 0x7fff //regexライブラリの最大値(32767)。
                             //{1,32767}をコンパイルするとメモリ2GB以上消費する。
 #undef  RE_DUP_MAX
@@ -31,7 +29,7 @@
 /* Like REG_NOTBOL, except for the end-of-line.  */
 //#define REG_NOTEOL (1 << 1)
 
-typedef struct regcomp reg_compile_t;
+typedef struct regcomp reg_compile_t;  //コンパイル結果
 
 //エラーコードの定義
 typedef enum {
@@ -56,8 +54,25 @@ typedef struct {
 extern reg_err_info_t reg_err_info; //エラー情報
 extern int reg_syntax;              //syntax
 
+//正規表現regexp（NUL終端）をコンパイルして、コンパイル結果のポインタを返す。
+//エラー発生時はNULLを返し、reg_err_infoにエラー情報が格納される。
+//NULLでないre_nsubが指定された場合は、サブパターンの数を返す。
+//cflagsにはregex互換の以下に示す定数一つ以上のビットごとの OR (bitwise-or) を指定する。
+// REG_EXTENDED
+// REG_ICASE
+// REG_NEWLINE
 reg_compile_t* reg_compile(const char *regexp, size_t *re_nsub, int cflags);
+
+//reg_compileでコンパイルした結果をもとに、text（NUL終端）を検索する。
+//成功した場合は0、失敗した場合は0以外を返す。
+//NULLでないpmatchを指定した場合は、マッチングした文字列のオフセットを得ることができる。
+//pmatchのサイズは少なくともre_nsub+1個以上が必要となる。
+//eflagsにはregex互換の以下に示す定数一つ以上のビットごとの OR (bitwise-or) を指定する。
+// REG_NOTBOL
+// REG_NOTEOL
 int reg_exec(reg_compile_t *preg_compile, const char *text, size_t nmatch, regmatch_t *pmatch, int eflags);
+
+//reg_compileが返したコンパイル結果を解放する。
 void reg_compile_free(reg_compile_t* preg_compile);
 
 void reg_dump(FILE *fp, reg_compile_t *preg_compile, int indent);
