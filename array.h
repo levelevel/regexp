@@ -35,7 +35,7 @@ void put_array(array_t *array, int idx, sarray_data_t data);
 //アレイのidx番目のデータを取得する。アレイのサイズは変わらない。
 sarray_data_t get_array(const array_t *array, int idx);
 
-//高速にデータにアクセスるマクロ。インデックスの範囲チェックは行わない。
+//高速にデータにアクセスするマクロ。インデックスの範囲チェックは行わない。
 #define poke_array(array, idx, data) ((array)->buckets[idx] = (sarray_data_t)data)
 #define peek_array(array, idx)       ((array)->buckets[idx])
 

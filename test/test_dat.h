@@ -22,6 +22,10 @@
     {__LINE__, "abc",       "^ab$",             {""},               1, 1, REG_BRE_ERE},
     {__LINE__, "abc",       "^bc$",             {""},               1, 1, REG_BRE_ERE},
     {__LINE__, "abc",       "^abc$",            {"abc"},            1, 0, REG_BRE_ERE},
+    {__LINE__, "^abc",      "^^a",              {"^a"},             1, 0, REG_BASIC},
+    {__LINE__, "abc",       "^^a",              {"a"},              1, 0, REG_EXTENDED},
+    {__LINE__, "abc$",      "c$$",              {"c$"},             1, 0, REG_BASIC},
+    {__LINE__, "abc",       "c$$",              {"c"},              1, 0, REG_EXTENDED},
 
     {__LINE__, "abc",       "a*",               {"a"},              1, 0, REG_BRE_ERE},
     {__LINE__, "abc",       "aa*",              {"a"},              1, 0, REG_BRE_ERE},
@@ -266,4 +270,49 @@
     {__LINE__, "aBc",       "[^A-Z]+",           {""},              1, 1, REG_BRE_ERE|REG_ICASE},
     {__LINE__, "aBc",       "[[:lower:]]*",      {"aBc"},           1, 0, REG_BRE_ERE|REG_ICASE},
     {__LINE__, "aBc",       "[[:alpha:]]*",      {"aBc"},           1, 0, REG_BRE_ERE|REG_ICASE},
+
+    {__LINE__, "abc\n",     "c\n",               {"c\n"},           1, 0, REG_BRE_ERE},
+    {__LINE__, "abc\n",     "c\n",               {"c\n"},           1, 0, REG_BRE_ERE|REG_NEWLINE},
+    {__LINE__, "ab\nc",     "b\nc",              {"b\nc"},          1, 0, REG_BRE_ERE|REG_NEWLINE},
+    {__LINE__, "\nabc",     "\na",               {"\na"},           1, 0, REG_BRE_ERE|REG_NEWLINE},
+    {__LINE__, "ab\nxy",    "^x",                {""},              1, 1, REG_BRE_ERE},
+    {__LINE__, "ab\nxy",    "^x",                {"x"},             1, 0, REG_BRE_ERE|REG_NEWLINE},
+    {__LINE__, "ab\nxy",    "b^x",               {""},              1, 1, REG_BRE_ERE|REG_NEWLINE},
+    {__LINE__, "\nxy",      "^x",                {"x"},             1, 0, REG_BRE_ERE|REG_NEWLINE},
+    {__LINE__, "ab\nxy",    "b$",                {""},              1, 1, REG_BRE_ERE},
+    {__LINE__, "ab\nxy",    "b$",                {"b"},             1, 0, REG_BRE_ERE|REG_NEWLINE},
+    {__LINE__, "ab\nxy",    "b$x",               {""},              1, 1, REG_BRE_ERE|REG_NEWLINE},
+    {__LINE__, "ab\nxy",    "b$^x",              {""},              1, 1, REG_BRE_ERE|REG_NEWLINE},
+    {__LINE__, "a\nb",      "a$\n^b",            {""},              1, 1, REG_BASIC   |REG_NEWLINE},
+    {__LINE__, "a\nb",      "a$\n^b",            {"a\nb"},          1, 0, REG_EXTENDED|REG_NEWLINE},
+    {__LINE__, "a\nb",      "a$^b",              {""},              1, 1, REG_EXTENDED|REG_NEWLINE},
+
+    {__LINE__, "ab\nxy",    "\\(^x\\)y",         {"xy","x"},        2, 0, REG_BASIC   |REG_NEWLINE},
+    {__LINE__, "ab\nxy",    "(^x)y",             {"xy","x"},        2, 0, REG_EXTENDED|REG_NEWLINE},
+    {__LINE__, "ab\nxy",    "\\(b$\\)\nx",       {"b\nx","b"},      2, 0, REG_BASIC   |REG_NEWLINE},
+    {__LINE__, "ab\nxy",    "(b$)\nx",           {"b\nx","b"},      2, 0, REG_EXTENDED|REG_NEWLINE},
+    {__LINE__, "ab\nxy",    "^(x)y",             {"xy","x"},        2, 0, REG_EXTENDED|REG_NEWLINE},
+    {__LINE__, "ab\nxy",    "(b)$",              {"b","b"},         2, 0, REG_EXTENDED|REG_NEWLINE},
+    {__LINE__, "ab\nxy",    "^^xy",              {"xy"},            1, 0, REG_EXTENDED|REG_NEWLINE},
+    {__LINE__, "ab\nxy",    "ab$$",              {"ab"},            1, 0, REG_EXTENDED|REG_NEWLINE},
+
+    {__LINE__, "xy",       "((^x)y)",            {"xy","xy","x"},   3, 0, REG_EXTENDED|REG_NEWLINE},
+    {__LINE__, "\nxy",     "(^x)y",              {"xy","x"},        2, 0, REG_EXTENDED|REG_NEWLINE},
+    {__LINE__, "\nxy",     "((^x)y)",            {"xy","xy","x"},   3, 0, REG_EXTENDED|REG_NEWLINE},
+
+    {__LINE__, "ab\nxy",    "^xz|^xy",           {"xy"},            1, 0, REG_EXTENDED|REG_NEWLINE},
+    {__LINE__, "ab\nxy",    "^(xz|xy)",          {"xy","xy"},       2, 0, REG_EXTENDED|REG_NEWLINE},
+    {__LINE__, "ab\nxy",    "(^xy|z)",           {"xy","xy"},       2, 0, REG_EXTENDED|REG_NEWLINE},
+    {__LINE__, "ab\nxyz",   "((^xy|z)z)$",       {"xyz","xyz","xy"},3, 0, REG_EXTENDED|REG_NEWLINE},
+
+    {__LINE__, "ab\nxy",    "ab$|az$",           {"ab"},            1, 0, REG_EXTENDED|REG_NEWLINE},
+    {__LINE__, "ab\nxy",    "(ab|az)$",          {"ab","ab"},       2, 0, REG_EXTENDED|REG_NEWLINE},
+    {__LINE__, "ab\nxy",    "(ab$|az$)",         {"ab","ab"},       2, 0, REG_EXTENDED|REG_NEWLINE},
+    {__LINE__, "0ab\nxy",   "^(0(ab$|az$))",     {"0ab","0ab","ab"},3, 0, REG_EXTENDED|REG_NEWLINE},
+
+    {__LINE__, "ab\nxy",    "ab.",               {"ab\n"},          1, 0, REG_BRE_ERE},
+    {__LINE__, "ab\nxy",    "ab.",               {""},              1, 1, REG_BRE_ERE|REG_NEWLINE}, //.は\nにマッチしない
+    {__LINE__, "ab\nxy",    "ab[^a-z]",          {"ab\n"},          1, 0, REG_BRE_ERE},
+    {__LINE__, "ab\nxy",    "ab[^a-z]",          {""},              1, 1, REG_BRE_ERE|REG_NEWLINE}, //[^...]は\nにマッチしない
+    {__LINE__, "ab\nxy",    "ab[\n]",            {"ab\n"},          1, 0, REG_BRE_ERE|REG_NEWLINE},
 //}

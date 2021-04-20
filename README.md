@@ -1,10 +1,9 @@
 # regexp：正規表現
 
-regex互換の基本正規表現と拡張正規表現をサポート。
+POSIX(regex)互換の基本正規表現(BRE)と拡張正規表現(ERE)をサポート。
 
 ## TODO
 
-- REG_NWLINE
 - REG_NOTBOL
 - REG_NOTEOL
 

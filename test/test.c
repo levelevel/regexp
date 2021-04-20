@@ -29,14 +29,13 @@ static int test_regexp(test_t *test_data) {
     int n = test_data->no;
     const char *text = test_data->text;
     const char *regexp = test_data->regexp;
-    regex_t preg = {0};
-    reg_compile_t *preg_compile;
     int errcode;
     int ret1, ret2; //1:一致、0:不一致、-1:エラー
     int result = 1; //1:OK, 0:NG
     char buf[1024];
 
     //regex
+    regex_t preg = {0};
     regmatch_t *pmatch1 = NULL;
     size_t nmatch1 = 0;
     errcode = regcomp(&preg, regexp, test_data->cflags&REG_FLAGS_MASK);
@@ -50,6 +49,7 @@ static int test_regexp(test_t *test_data) {
     }
 
     //regexp
+    reg_compile_t *preg_compile;
     regmatch_t *pmatch2 = NULL;
     size_t nmatch2 = 0;
     preg_compile = reg_compile(regexp, &nmatch2, test_data->cflags&REG_FLAGS_MASK);
@@ -70,12 +70,17 @@ static int test_regexp(test_t *test_data) {
             pmatch1[i].rm_so==pmatch2[i].rm_so && pmatch1[i].rm_eo==pmatch2[i].rm_eo);
         if (ret1 != ret2 || ret1 != test_data->expect || !match_sub || nmatch1!=nmatch2) result = 0;
         if (result==0 || dump_flag) {
-            printf("%s: line=%d[%d]: ret=%d:%d text='%s', regexp='%s', nmatch=%ld:%ld, cflags=%x\n",
-                result==0?"ERROR":"DUMP", n, i, ret1, ret2, text, regexp, nmatch1, nmatch2, test_data->cflags);
+            printf("%s: line=%d[%d]: ret=%d:%d text='", result==0?"ERROR":"DUMP", n, i, ret1, ret2);
+            reg_print_str(stdout, text);
+            printf("', regexp='");
+            reg_print_str(stdout, regexp);
+            printf("', nmatch=%ld:%ld, cflags=%s\n", nmatch1, nmatch2, reg_cflags2str(test_data->cflags));
             if (1 || !match_sub || dump_flag) {
-                printf("  pmatch1=[%d,%d], pmatch2=[%d,%d], expected_match='%s'\n",
+                printf("  pmatch1=[%d,%d], pmatch2=[%d,%d], expected_match='",
                     pmatch1[i].rm_so, pmatch1[i].rm_eo,
-                    pmatch2[i].rm_so, pmatch2[i].rm_eo, test_data->match[i]);
+                    pmatch2[i].rm_so, pmatch2[i].rm_eo);
+                reg_print_str(stdout, test_data->match[i]);
+                printf("'\n");
             }
         }
     }
@@ -83,9 +88,13 @@ static int test_regexp(test_t *test_data) {
         reg_dump(stdout, preg_compile, 2);
     }
     if (errcode!=reg_err_info.err_code || (test_data->cflags&REG_DUMP)) {
-        fprintf(stderr, "%d: regex:  regexp='%s', errcode=%d, %s\n", n, regexp, errcode, errcode?buf:"");
+        printf("%d: regex:  regexp='", n);
+        reg_print_str(stdout, regexp);
+        printf("', errcode=%d, %s\n", errcode, errcode?buf:"");
         for (int i=0; i<nmatch1; i++) printf("    pmatch1[%d]=[%d,%d]\n", i, pmatch1[i].rm_so, pmatch1[i].rm_eo);
-        fprintf(stderr, "%d: regexp: regexp='%s', errcode=%d, %s\n", n, regexp, reg_err_info.err_code, reg_err_info.err_msg);
+        printf("%d: regexp: regexp='", n);
+        reg_print_str(stdout, regexp);
+        printf("', errcode=%d, %s\n", reg_err_info.err_code, reg_err_info.err_msg);
         for (int i=0; i<nmatch2; i++) printf("    pmatch2[%d]=[%d,%d]\n", i, pmatch2[i].rm_so, pmatch2[i].rm_eo);
     }
 
@@ -101,6 +110,7 @@ static int test_regexp(test_t *test_data) {
 int main(int argc, char **argv) {
     UNUSED(argc);
     UNUSED(argv);
+    int cnt = 0;
     int err_cnt = 0;
     int bre_cnt = 0;
     int ere_cnt = 0;
@@ -108,6 +118,7 @@ int main(int argc, char **argv) {
     for (int i=0; i<size; i++) {
         test_t *test = &data[i];
         if (test->text==NULL) break;
+        cnt++;
         if (test->cflags&REG_BRE_ERE) {
             test->cflags &= ~(REG_EXTENDED|REG_BRE_ERE);
             if (test_regexp(test)==0) err_cnt++;    //BREでテスト
@@ -121,6 +132,7 @@ int main(int argc, char **argv) {
             else                           bre_cnt++;
         }
     }
-    printf("%s: %d/%d (BRE=%d, ERE=%d)\n", err_cnt?"FAIL":"PASS", err_cnt?err_cnt:size, size, bre_cnt, ere_cnt);
+    printf("%s: %d/%d (BRE=%d, ERE=%d, skip=%d)\n",
+        err_cnt?"FAIL":"PASS", err_cnt?err_cnt:cnt, cnt, bre_cnt, ere_cnt, size-cnt);
     return !(err_cnt==0);
 }
