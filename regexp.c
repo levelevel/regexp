@@ -913,7 +913,9 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
         return 0;
     }
     case PAT_OR:
-        for (int i=0; i<num_array(pat->or_array); i++) {
+    {
+        int num = num_array(pat->or_array);
+        for (int i=0; i<num; i++) {
             reg_compile_t *subreg = peek_array(pat->or_array, i);
             if (reg_exec_main(subreg, text)==0) {
                 *len = g_pmatch[subreg->ref_num].rm_eo - g_pmatch[subreg->ref_num].rm_so;
@@ -923,6 +925,7 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
             }
         }
         return 0;
+    }
     case PAT_CARET:
         if (g_newline_anchor && g_start==text && *text=='\n') {
             preg_compile->match_newline = 1;
@@ -982,9 +985,21 @@ static void reg_pattern_free(pattern_t *pat) {
     switch (pat->type) {
     case PAT_CHARSET:
         free(pat->cset.chars);
+        pat->cset.chars = NULL;
         break;
     case PAT_SUBREG:
         reg_compile_free(pat->regcomp);
+        pat->regcomp = NULL;
+        break;
+    case PAT_OR:
+        if (pat->or_array) {
+            int num = num_array(pat->or_array);
+            for (int i=0; i<num; i++) {
+                reg_compile_free(peek_array(pat->or_array, i));
+            }
+            free_array(pat->or_array);
+            pat->or_array = NULL;
+        }
         break;
     default:
         break;
