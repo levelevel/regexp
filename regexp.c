@@ -218,7 +218,7 @@ typedef enum {
 #define MAX_PAREN 9
 static int g_nparen;            //()の数(0-9)
 static int g_nparen_finished;   //完了した()の数
-static int g_syntax;            //構文の制御 RE_*
+int reg_syntax;                 //syntax (RE_*)
 
 static void push_char_set(char_set_t *char_set, char c);
 static void push_char_set_str(char_set_t *char_set, const char *str);
@@ -246,13 +246,13 @@ static void reg_set_err(reg_err_code_t err_code);
 #define token2_is(p, str)   (memcmp(p, str, 2)==0)
 #define token3_is(p, str)   (memcmp(p, str, 3)==0)
 
-#define token_is_open_brace(p)  ((g_syntax&RE_NO_BK_BRACES) ? token1_is(p, '{') : token2_is(p, "\\{"))
-#define token_is_close_brace(p) ((g_syntax&RE_NO_BK_BRACES) ? token1_is(p, '}') : token2_is(p, "\\}"))
-#define token_is_open_paren(p)  ((g_syntax&RE_NO_BK_PARENS) ? token1_is(p, '(') : token2_is(p, "\\("))
-#define token_is_close_paren(p) ((g_syntax&RE_NO_BK_PARENS) ? token1_is(p, ')') : token2_is(p, "\\)"))
-#define token_is_plus(p)       (!(g_syntax&RE_BK_PLUS_QM)   ? token1_is(p, '+') : token2_is(p, "\\+"))
-#define token_is_question(p)   (!(g_syntax&RE_BK_PLUS_QM)   ? token1_is(p, '?') : token2_is(p, "\\?"))
-#define token_is_vbar(p)        ((g_syntax&RE_NO_BK_VBAR)   ? token1_is(p, '|') : token2_is(p, "\\|"))
+#define token_is_open_brace(p)  ((reg_syntax&RE_NO_BK_BRACES) ? token1_is(p, '{') : token2_is(p, "\\{"))
+#define token_is_close_brace(p) ((reg_syntax&RE_NO_BK_BRACES) ? token1_is(p, '}') : token2_is(p, "\\}"))
+#define token_is_open_paren(p)  ((reg_syntax&RE_NO_BK_PARENS) ? token1_is(p, '(') : token2_is(p, "\\("))
+#define token_is_close_paren(p) ((reg_syntax&RE_NO_BK_PARENS) ? token1_is(p, ')') : token2_is(p, "\\)"))
+#define token_is_plus(p)       (!(reg_syntax&RE_BK_PLUS_QM)   ? token1_is(p, '+') : token2_is(p, "\\+"))
+#define token_is_question(p)   (!(reg_syntax&RE_BK_PLUS_QM)   ? token1_is(p, '?') : token2_is(p, "\\?"))
+#define token_is_vbar(p)        ((reg_syntax&RE_NO_BK_VBAR)   ? token1_is(p, '|') : token2_is(p, "\\|"))
 
 // reg_compile: compile regexp
 // reg_exp      = sequence_exp ( "|" sequence_exp )*                            ERE
@@ -263,13 +263,13 @@ reg_compile_t* reg_compile(const char *regexp, size_t *re_nsub, int cflags) {
     reg_err_info.err_msg = "";
     reg_compile_t *preg_compile;
     g_nparen = g_nparen_finished = 0;
-    g_syntax = ((cflags & REG_EXTENDED) ? RE_SYNTAX_POSIX_EXTENDED : RE_SYNTAX_POSIX_BASIC);
+    reg_syntax = ((cflags & REG_EXTENDED) ? RE_SYNTAX_POSIX_EXTENDED : RE_SYNTAX_POSIX_BASIC);
     if (cflags&REG_ICASE) {
-        g_syntax |= RE_ICASE;                   //ignore case
+        reg_syntax |= RE_ICASE;                   //ignore case
     }
     if (cflags&REG_NEWLINE) {
-        g_syntax &= ~RE_DOT_NEWLINE;            //.を\nにマッチさせない
-        g_syntax |= RE_HAT_LISTS_NOT_NEWLINE;   //[^...]を\nにマッチさせない
+        reg_syntax &= ~RE_DOT_NEWLINE;            //.を\nにマッチさせない
+        reg_syntax |= RE_HAT_LISTS_NOT_NEWLINE;   //[^...]を\nにマッチさせない
     }
 
     preg_compile = reg_exp(regexp, 0);
@@ -277,7 +277,7 @@ reg_compile_t* reg_compile(const char *regexp, size_t *re_nsub, int cflags) {
         if (re_nsub) *re_nsub = g_nparen;
         preg_compile->nparen = g_nparen;
         preg_compile->cflags = cflags;
-        preg_compile->syntax = g_syntax;
+        preg_compile->syntax = reg_syntax;
         if (cflags&REG_NEWLINE) preg_compile->newline_anchor = 1;
     }
 
@@ -293,7 +293,7 @@ static void push_char_set(char_set_t *char_set, char c) {
         char_set->chars = realloc(char_set->chars, char_set->size*sizeof(char));
         assert(char_set->chars);
     }
-    char_set->chars[len++] = (g_syntax&RE_ICASE)?toupper(c):c;
+    char_set->chars[len++] = (reg_syntax&RE_ICASE)?toupper(c):c;
     char_set->chars[len] = '\0';
 }
 //push_char_set_str: 文字セットに文字列を追加する。
@@ -469,10 +469,10 @@ static reg_stat_t repeat_exp(reg_compile_t *preg_compile) {
             }
             push_pattern(preg_compile, pat);
             preg_compile->p++;
-            if ((g_syntax&RE_CONTEXT_INDEP_OPS)) continue;
+            if ((reg_syntax&RE_CONTEXT_INDEP_OPS)) continue;
         } else if (token_is_open_brace(preg_compile->p)) {  //'{' or '\{'
             if (new_repeat(preg_compile)==REG_ERR) return REG_ERR;
-            if ((g_syntax&RE_CONTEXT_INDEP_OPS)) continue;
+            if ((reg_syntax&RE_CONTEXT_INDEP_OPS)) continue;
         }
         break;
     }
@@ -511,14 +511,14 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
         } else if (token1_is(preg_compile->p, '.')) {
             pat = new_pattern(PAT_DOT);
         } else if (((token1_is(preg_compile->p, '*') || token_is_plus(preg_compile->p) || token_is_question(preg_compile->p))
-                 && ((g_syntax&RE_CONTEXT_INVALID_OPS) || (preg_compile->prev_pat && preg_compile->prev_pat->type!=PAT_CARET)))
+                 && ((reg_syntax&RE_CONTEXT_INVALID_OPS) || (preg_compile->prev_pat && preg_compile->prev_pat->type!=PAT_CARET)))
                 || token_is_open_brace(preg_compile->p)) {
             reg_set_err(REG_ERR_CODE_INVALID_PRECEDING_REGEXP);
         } else if (token_is_open_paren(preg_compile->p)) {          //'('
             return new_subreg(preg_compile);
         } else if (token_is_close_paren(preg_compile->p)) {         //')'
             if (preg_compile->mode==PAT_SUBREG) return REG_END;
-            if (g_syntax&RE_UNMATCHED_RIGHT_PAREN_ORD) goto L_CHAR;  //EREでは単独の')'はリテラル
+            if (reg_syntax&RE_UNMATCHED_RIGHT_PAREN_ORD) goto L_CHAR;  //EREでは単独の')'はリテラル
             reg_set_err(REG_ERR_CODE_UNMATCHED_PAREN);
         } else if (token1_is(preg_compile->p, '\\') && preg_compile->p[1]>='1' && preg_compile->p[1]<='9') {
             int num = preg_compile->p[1]-'0';
@@ -537,20 +537,20 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
             preg_compile->p++;
         } else if (token1_is(preg_compile->p, '[')) {
             return new_char_set(preg_compile);
-        } else if ((token1_is(preg_compile->p, '$') && (g_syntax&RE_CONTEXT_INDEP_ANCHORS))
+        } else if ((token1_is(preg_compile->p, '$') && (reg_syntax&RE_CONTEXT_INDEP_ANCHORS))
                 || token2_is(preg_compile->p, "$\0")
                 || (token3_is(preg_compile->p, "$\\)") && preg_compile->mode==PAT_SUBREG)) {
             pat = new_pattern(PAT_DOLLAR);
             cont_flag = 1;
         } else if (token1_is(preg_compile->p, '^') &&
-                 ((g_syntax&RE_CONTEXT_INDEP_ANCHORS) || preg_compile->regexp==preg_compile->p)) {
+                 ((reg_syntax&RE_CONTEXT_INDEP_ANCHORS) || preg_compile->regexp==preg_compile->p)) {
             pat = new_pattern(PAT_CARET);
             cont_flag = 1;
         } else {
             L_CHAR:
             pat = new_pattern(PAT_CHAR);
             char c = preg_compile->p[0];
-            pat->c = (g_syntax&RE_ICASE)?toupper(c):c;
+            pat->c = (reg_syntax&RE_ICASE)?toupper(c):c;
         }
         if (pat) {
             push_pattern(preg_compile, pat);
@@ -731,18 +731,18 @@ static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_s
         regexp += 5;
     } else if (strncmp(regexp, "alpha", 5)==0) {
         for (int c='A'; c<='Z'; c++) push_char_set(char_set, c);
-        if (!(g_syntax&RE_ICASE))
+        if (!(reg_syntax&RE_ICASE))
             for (int c='a'; c<='z'; c++) push_char_set(char_set, c);
         regexp += 5;
     } else if (strncmp(regexp, "alnum", 5)==0) {
         for (int c='A'; c<='Z'; c++) push_char_set(char_set, c);
-        if (!(g_syntax&RE_ICASE))
+        if (!(reg_syntax&RE_ICASE))
             for (int c='a'; c<='z'; c++) push_char_set(char_set, c);
         for (int c='0'; c<='9'; c++) push_char_set(char_set, c);
         regexp += 5;
     } else if (strncmp(regexp, "word", 4)==0) {
         for (int c='A'; c<='Z'; c++) push_char_set(char_set, c);
-        if (!(g_syntax&RE_ICASE))
+        if (!(reg_syntax&RE_ICASE))
             for (int c='a'; c<='z'; c++) push_char_set(char_set, c);
         for (int c='0'; c<='9'; c++) push_char_set(char_set, c);
         push_char_set(char_set, '_');
@@ -753,7 +753,7 @@ static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_s
     } else if (strncmp(regexp, "xdigit", 6)==0) {
         for (int c='0'; c<='9'; c++) push_char_set(char_set, c);
         for (int c='A'; c<='F'; c++) push_char_set(char_set, c);
-        if (!(g_syntax&RE_ICASE))
+        if (!(reg_syntax&RE_ICASE))
             for (int c='a'; c<='f'; c++) push_char_set(char_set, c);
         regexp += 6;
     } else if (strncmp(regexp, "punct", 5)==0) {
@@ -800,13 +800,14 @@ static const char *g_start;     //パターン一致の開始位置
 static int g_newline_anchor;    //\nをアンカーとする（^/$にマッチする）
 static size_t      g_nmatch;    //pmatchの要素数
 static regmatch_t *g_pmatch;    //マッチング位置
+static int         g_eflags;
 
 // reg_exec: search for compiled regexp anywhere in text
 int reg_exec(reg_compile_t *preg_compile, const char *text, size_t nmatch, regmatch_t *pmatch, int eflags) {
-    (void)eflags;
     g_text = text;
-    g_syntax = preg_compile->syntax;
+    reg_syntax = preg_compile->syntax;
     g_newline_anchor = preg_compile->newline_anchor;
+    g_eflags = eflags;
     preg_compile->match_newline = 0;
     if (pmatch) {
         memset(pmatch, 0, sizeof(pmatch[0])*nmatch);
@@ -880,15 +881,15 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
     *len = 1;   //patにマッチしたtextの長さ
     switch (pat->type) {
     case PAT_CHAR:
-        return pat->c == ((g_syntax&RE_ICASE)?toupper(*text):*text);
+        return pat->c == ((reg_syntax&RE_ICASE)?toupper(*text):*text);
     case PAT_CHARSET:
         if (*text == '\0') return 0;
-        if (*text == '\n' && pat->cset.reverse && g_syntax&RE_HAT_LISTS_NOT_NEWLINE) return 0;
-        if (strchr(pat->cset.chars, (g_syntax&RE_ICASE)?toupper(*text):*text))
+        if (*text == '\n' && pat->cset.reverse && reg_syntax&RE_HAT_LISTS_NOT_NEWLINE) return 0;
+        if (strchr(pat->cset.chars, (reg_syntax&RE_ICASE)?toupper(*text):*text))
             return !pat->cset.reverse;
         return pat->cset.reverse;
     case PAT_DOT:
-        if (!(g_syntax&RE_DOT_NEWLINE) && *text=='\n') return 0;
+        if (!(reg_syntax&RE_DOT_NEWLINE) && *text=='\n') return 0;
         return *text != '\0';
     case PAT_SUBREG:
         if (reg_exec_main(pat->regcomp, text)==0) {
@@ -930,13 +931,13 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
         } else if (g_newline_anchor && g_start<text && *(text-1)=='\n') {
             *len = 0;
             return 1;
-        } else if (text==g_text) {
+        } else if (!(g_eflags&REG_NOTBOL) && text==g_text) {
             *len = 0;
             return 1;
         }
         return 0;
     case PAT_DOLLAR:
-        if (*text=='\0') {
+        if (!(g_eflags&REG_NOTEOL) && *text=='\0') {
             *len = 0;
             return 1;
         } else if (g_newline_anchor && *text=='\n') {
@@ -1002,6 +1003,10 @@ static name_tbl_t cflags_tbl[] = {
     REG_TBL(ICASE),
     REG_TBL(NEWLINE),
 };
+static name_tbl_t eflags_tbl[] = {
+    REG_TBL(NOTBOL),
+    REG_TBL(NOTEOL),
+};
 static name_tbl_t syntax_tbl[] = {
     RE_TBL(CONTEXT_INDEP_ANCHORS),
     RE_TBL(CONTEXT_INDEP_OPS),
@@ -1015,37 +1020,32 @@ static name_tbl_t syntax_tbl[] = {
     RE_TBL(UNMATCHED_RIGHT_PAREN_ORD),
     RE_TBL(ICASE),
 };
-const char* reg_cflags2str(int cflags) {
-    static char buf[256];
+static const char* reg_flag2str(int flags, name_tbl_t *tbl, size_t size, char buf[]) {
     char *p = buf;
     int cnt = 0;
-    int junk = cflags;
+    int junk = flags;
     *p = '\0';
-    for (int i=0; i<sizeof(cflags_tbl)/sizeof(cflags_tbl[0]); i++) {
-        if (cflags&cflags_tbl[i].num) {
-            p += sprintf(p, "%s%s", cnt?"|":"REG_", cflags_tbl[i].name);
+    for (int i=0; i<size; i++) {
+        if (flags&tbl[i].num) {
+            p += sprintf(p, "%s%s", cnt?"|":"REG_", tbl[i].name);
             cnt++;
-            junk &= ~cflags_tbl[i].num;
+            junk &= ~tbl[i].num;
         }
     }
     if (junk) sprintf(p, "|0x%x", junk);
     return buf;
 }
+const char* reg_cflags2str(int cflags) {
+    static char buf[256];
+    return reg_flag2str(cflags, cflags_tbl, sizeof(cflags_tbl)/sizeof(cflags_tbl[0]), buf);
+}
+const char* reg_eflags2str(int eflags) {
+    static char buf[256];
+    return reg_flag2str(eflags, eflags_tbl, sizeof(eflags_tbl)/sizeof(eflags_tbl[0]), buf);
+}
 const char* reg_syntax2str(int syntax) {
     static char buf[1024];
-    char *p = buf;
-    int cnt = 0;
-    int junk = syntax;
-    *p = '\0';
-    for (int i=0; i<sizeof(syntax_tbl)/sizeof(syntax_tbl[0]); i++) {
-        if (syntax&syntax_tbl[i].num) {
-            p += sprintf(p, "%s%s", cnt?"|":"RE_", syntax_tbl[i].name);
-            cnt++;
-            junk &= ~syntax_tbl[i].num;
-        }
-    }
-    if (junk) sprintf(p, "|0x%x", junk);
-    return buf;
+    return reg_flag2str(syntax, syntax_tbl, sizeof(syntax_tbl)/sizeof(syntax_tbl[0]), buf);
 }
 void reg_print_str(FILE *fp, const char *str) {
     for(const char *p=str; *p; p++) {

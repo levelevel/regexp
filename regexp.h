@@ -54,6 +54,7 @@ typedef struct {
 } reg_err_info_t;
 
 extern reg_err_info_t reg_err_info; //エラー情報
+extern int reg_syntax;              //syntax
 
 reg_compile_t* reg_compile(const char *regexp, size_t *re_nsub, int cflags);
 int reg_exec(reg_compile_t *preg_compile, const char *text, size_t nmatch, regmatch_t *pmatch, int eflags);
@@ -62,4 +63,5 @@ void reg_compile_free(reg_compile_t* preg_compile);
 void reg_dump(FILE *fp, reg_compile_t *preg_compile, int indent);
 void reg_print_str(FILE *fp, const char *str);
 const char* reg_cflags2str(int cflags);
+const char* reg_eflags2str(int eflags);
 const char* reg_syntax2str(int syntax);

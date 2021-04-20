@@ -2,11 +2,6 @@
 
 POSIX(regex)互換の基本正規表現(BRE)と拡張正規表現(ERE)をサポート。
 
-## TODO
-
-- REG_NOTBOL
-- REG_NOTEOL
-
 ## 参考資料
 
 - [A Regular Expression Matcher, Code by Rob Pike](https://www.cs.princeton.edu/courses/archive/spr09/cos333/beautiful.html)

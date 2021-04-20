@@ -74,7 +74,8 @@ static int test_regexp(test_t *test_data) {
             reg_print_str(stdout, text);
             printf("', regexp='");
             reg_print_str(stdout, regexp);
-            printf("', nmatch=%ld:%ld, cflags=%s\n", nmatch1, nmatch2, reg_cflags2str(test_data->cflags));
+            printf("', nmatch=%ld:%ld, cflags=%s, eflags=%s\n",
+                nmatch1, nmatch2, reg_cflags2str(test_data->cflags), reg_eflags2str(test_data->eflags));
             if (1 || !match_sub || dump_flag) {
                 printf("  pmatch1=[%d,%d], pmatch2=[%d,%d], expected_match='",
                     pmatch1[i].rm_so, pmatch1[i].rm_eo,

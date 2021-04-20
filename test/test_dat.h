@@ -315,4 +315,11 @@
     {__LINE__, "ab\nxy",    "ab[^a-z]",          {"ab\n"},          1, 0, REG_BRE_ERE},
     {__LINE__, "ab\nxy",    "ab[^a-z]",          {""},              1, 1, REG_BRE_ERE|REG_NEWLINE}, //[^...]は\nにマッチしない
     {__LINE__, "ab\nxy",    "ab[\n]",            {"ab\n"},          1, 0, REG_BRE_ERE|REG_NEWLINE},
+
+    {__LINE__, "ab\nxy",    "^ab",               {"ab"},            1, 0, REG_BRE_ERE},
+    {__LINE__, "ab\nxy",    "^ab",               {""},              1, 1, REG_BRE_ERE,REG_NOTBOL},  //文字列の開始を^にマッチさせない
+    {__LINE__, "ab\nxy",    "^xy",               {"xy"},            1, 0, REG_BRE_ERE|REG_NEWLINE,REG_NOTBOL},
+    {__LINE__, "ab\nxy",    "xy$",               {"xy"},            1, 0, REG_BRE_ERE},
+    {__LINE__, "ab\nxy",    "xy$",               {""},              1, 1, REG_BRE_ERE,REG_NOTEOL},  //文字列の最後を$にマッチさせない
+    {__LINE__, "ab\nxy",    "ab$",               {"ab"},            1, 0, REG_BRE_ERE|REG_NEWLINE,REG_NOTEOL},
 //}
