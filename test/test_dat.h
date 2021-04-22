@@ -1,4 +1,5 @@
-//test_t data[] = {
+//test_str_t data[] = {
+//   no,       text,        regexp,             pmatch,             nmatch,result,
     {__LINE__, "abc",       "a",                {"a"},              1, 0, REG_BRE_ERE},
     {__LINE__, "abc",       "b",                {"b"},              1, 0, REG_BRE_ERE},
     {__LINE__, "abc",       "c",                {"c"},              1, 0, REG_BRE_ERE},
@@ -97,6 +98,7 @@
     {__LINE__, "abc",       "[a]",              {"a"},              1, 0, REG_BRE_ERE},
     {__LINE__, "abc",       "a[ab]",            {"ab"},             1, 0, REG_BRE_ERE},
     {__LINE__, "abc",       "a[abc]c",          {"abc"},            1, 0, REG_BRE_ERE},
+    {__LINE__, "abc",       "[a",               {""},               1,-1, REG_BRE_ERE},
     {__LINE__, "abc",       "[^a]",             {"b"},              1, 0, REG_BRE_ERE},
     {__LINE__, "aaa",       "[^a]",             {""},               1, 1, REG_BRE_ERE},
     {__LINE__, "abc",       "[^abc]",           {""},               1, 1, REG_BRE_ERE},
@@ -114,6 +116,7 @@
     {__LINE__, "123",       "[0-9]",            {"1"},              1, 0, REG_BRE_ERE},
     {__LINE__, "abc/5",     "[a-z]/[0-9]",      {"c/5"},            1, 0, REG_BRE_ERE},
     {__LINE__, "abc/z5",    "[a-z]/[0-9]",      {""},               1, 1, REG_BRE_ERE},
+    {__LINE__, "abc",       "[a-c-e]",          {""},               1,-1, REG_BRE_ERE},
 
     {__LINE__, "abc",       "[b]*",             {""},               1, 0, REG_BRE_ERE},
     {__LINE__, "abc",       "[b]*c",            {"bc"},             1, 0, REG_BRE_ERE},
@@ -264,6 +267,8 @@
     {__LINE__, "abc",        "[:alpha:]*",       {"a"},             1, 0, REG_BRE_ERE},
     {__LINE__, "abc",        "[[:Alpha:]]*",     {""},              1,-1, REG_BRE_ERE},
     {__LINE__, "abc",        "[[:alpha]]*",      {""},              1,-1, REG_BRE_ERE},
+    {__LINE__, "abc",        "[[:alpha:]",       {""},              1,-1, REG_BRE_ERE},
+    {__LINE__, "abc",        "[[:alpha:]-z]",    {""},              1,-1, REG_BRE_ERE},
 
     {__LINE__, "aBc",       "aBc",               {"aBc"},           1, 0, REG_BRE_ERE|REG_ICASE},
     {__LINE__, "aBc",       "Abc",               {"aBc"},           1, 0, REG_BRE_ERE|REG_ICASE},

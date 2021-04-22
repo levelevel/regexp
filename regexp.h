@@ -33,7 +33,9 @@ typedef struct regcomp reg_compile_t;  //コンパイル結果
 
 //エラーコードの定義
 typedef enum {
-    REG_ERR_CODE_OK = 0,
+    REG_ERR_CODE_OK                       = 0,
+    REG_ERR_CODE_NOMATCH                  = 1,
+    REG_ERR_CODE_INVALID_PATTERN          = 2,
     REG_ERR_CODE_INVALID_CHAR_CLASS       = 4,
     REG_ERR_CODE_INVALID_BACK_REF         = 6,
     REG_ERR_CODE_UNMATCHED_BRACKET        = 7,
@@ -61,7 +63,8 @@ extern int reg_syntax;              //syntax
 // REG_EXTENDED
 // REG_ICASE
 // REG_NEWLINE
-reg_compile_t* reg_compile(const char *regexp, size_t *re_nsub, int cflags);
+reg_compile_t* reg_compile (const char *regexp, size_t len, size_t *nsub, int cflags);
+reg_compile_t* reg_compile2(const char *regexp, size_t len, size_t *nsub, int cflags, int syntax);
 
 //reg_compileでコンパイルした結果をもとに、text（NUL終端）を検索する。
 //成功した場合は0、失敗した場合は0以外を返す。
@@ -70,13 +73,13 @@ reg_compile_t* reg_compile(const char *regexp, size_t *re_nsub, int cflags);
 //eflagsにはregex互換の以下に示す定数一つ以上のビットごとの OR (bitwise-or) を指定する。
 // REG_NOTBOL
 // REG_NOTEOL
-int reg_exec(reg_compile_t *preg_compile, const char *text, size_t nmatch, regmatch_t *pmatch, int eflags);
+int reg_exec(reg_compile_t *preg_compile, const char *text, size_t len, size_t nmatch, regmatch_t *pmatch, int eflags);
 
 //reg_compileが返したコンパイル結果を解放する。
 void reg_compile_free(reg_compile_t* preg_compile);
 
 void reg_dump(FILE *fp, reg_compile_t *preg_compile, int indent);
-void reg_print_str(FILE *fp, const char *str);
+void reg_print_str(FILE *fp, const char *bstr, int len);
 const char* reg_cflags2str(int cflags);
 const char* reg_eflags2str(int eflags);
 const char* reg_syntax2str(int syntax);
