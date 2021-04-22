@@ -175,8 +175,7 @@ static const char *pattern_type_str[] = {
 //[s], [^s]を格納する文字セット
 typedef struct {
     char reverse;       //否定 [^...]
-    unsigned int size;  //charsのバッファサイズ
-    char *chars;
+    char chars[256];    //0:指定あり、1:指定あり
 } char_set_t;
 
 //パターン
@@ -184,7 +183,7 @@ typedef struct {
     pattern_type_t  type;
     union {
         char        c;      //type=PAT_CHAR
-        char_set_t  cset;   //type=PAT_CHARSET
+        char_set_t *cset;   //type=PAT_CHARSET
         struct {
             int min, max;   //type=PAT_REPEAT
         };
@@ -221,7 +220,7 @@ typedef enum {
     REG_ERR,                //エラー時
 } reg_stat_t;
 
-static void push_char_set(char_set_t *char_set, char c);
+static void push_char_set(char_set_t *char_set, unsigned char c);
 static void push_char_set_str(char_set_t *char_set, const char *str);
 static pattern_t *new_pattern(pattern_type_t type);
 static reg_compile_t *new_reg_compile(const char *regexp);
@@ -303,28 +302,15 @@ reg_compile_t* reg_compile2(const char *regexp, size_t len, size_t *nsub, int cf
 }
 
 //push_char_set: 文字セットに文字を追加する。
-static void push_char_set(char_set_t *char_set, char c) {
-    assert(char_set);
-    size_t len = strlen(char_set->chars);
-    if (len+1>=char_set->size) {
-        char_set->size *= 2;
-        char_set->chars = realloc(char_set->chars, char_set->size*sizeof(char));
-        assert(char_set->chars);
-    }
-    char_set->chars[len++] = (reg_syntax&RE_ICASE)?toupper(c):c;
-    char_set->chars[len] = '\0';
+static void push_char_set(char_set_t *char_set, unsigned char c) {
+    char_set->chars[c] = !char_set->reverse;
+    unsigned uc = toupper(c);
+    if ((reg_syntax&RE_ICASE) && c!=uc)
+        char_set->chars[uc] = !char_set->reverse;
 }
 //push_char_set_str: 文字セットに文字列を追加する。
 static void push_char_set_str(char_set_t *char_set, const char *str) {
-    assert(char_set);
-    size_t len1 = strlen(char_set->chars);
-    size_t len2 = strlen(str);
-    if (len1+len2>=char_set->size) {
-        while (len1+len2>=char_set->size) char_set->size *= 2;
-        char_set->chars = realloc(char_set->chars, char_set->size*sizeof(char));
-        assert(char_set->chars);
-    }
-    strcat(char_set->chars+len1, str);
+    for (; *str; str++) push_char_set(char_set, *str);
 }
 
 // new_pattern: allocate new pattern for the type
@@ -667,9 +653,8 @@ static reg_stat_t new_char_set(reg_compile_t *preg_compile) {
     pattern_t *pat = new_pattern(PAT_CHARSET);
     const char *regexp = preg_compile->p;
     assert(token1_is(regexp, '['));
-    char_set_t *char_set = &pat->cset;
-    char_set->size = 256;
-    char_set->chars = calloc(char_set->size, sizeof(char));
+    char_set_t *char_set;
+    pat->cset = char_set = calloc(1, sizeof(char_set_t));;
     int bracket_is_closed = 0;  //']'が出現済み
     int accept_minus = 0;       //次の文字で範囲指定の'-'が利用できる
 
@@ -681,6 +666,7 @@ static reg_stat_t new_char_set(reg_compile_t *preg_compile) {
             return REG_ERR;
         }
         char_set->reverse = 1;
+        memset(char_set->chars, 1, sizeof(char_set->chars)*sizeof(char_set->chars[0]));
         regexp++;
     }
     if (token1_is(regexp, ']') || token1_is(regexp, '-')) {
@@ -728,6 +714,17 @@ static reg_stat_t new_char_set(reg_compile_t *preg_compile) {
     return REG_OK;
 }
 
+static void set_alpha(char_set_t *char_set) {
+    for (int c='A'; c<='Z'; c++) push_char_set(char_set, c);
+    for (int c='a'; c<='z'; c++) push_char_set(char_set, c);
+}
+static void set_alnum(char_set_t *char_set) {
+    set_alpha(char_set);
+    for (int c='0'; c<='9'; c++) push_char_set(char_set, c);
+}
+static void set_punct(char_set_t *char_set) {
+    push_char_set_str(char_set, "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~");
+}
 // new_char_class: 文字クラスを設定する。入力："[:...:]"
 // char_class   = "upper"       #[A-Z]                                      POSIX
 //              | "lower"       #[a-z]                                      POSIX
@@ -736,7 +733,7 @@ static reg_stat_t new_char_set(reg_compile_t *preg_compile) {
 //              | "word"        #[A-Za-z0-9_]
 //              | "digit"       #[0-9]                                      POSIX
 //              | "xdigit"      #[0-9A-Fa-f]                                POSIX
-//              | "punct"       #[]!"#$%&'()*+,-./:;<=>?@[\^_`{|}~-]        POSIX
+//              | "punct"       #[]!"#$%&'()*+,./:;<=>?@[\^_`{|}~-]         POSIX
 //              | "blank"       #[ \t]                                      POSIX
 //              | "space"       #[ \t\n\r\f\v]                              POSIX
 //              | "cntrl"       #0x00-0x1f, 0x7f                            POSIX
@@ -753,21 +750,13 @@ static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_s
         for (int c='a'; c<='z'; c++) push_char_set(char_set, c);
         regexp += 5;
     } else if (strncmp(regexp, "alpha", 5)==0) {
-        for (int c='A'; c<='Z'; c++) push_char_set(char_set, c);
-        if (!(reg_syntax&RE_ICASE))
-            for (int c='a'; c<='z'; c++) push_char_set(char_set, c);
+        set_alpha(char_set);
         regexp += 5;
     } else if (strncmp(regexp, "alnum", 5)==0) {
-        for (int c='A'; c<='Z'; c++) push_char_set(char_set, c);
-        if (!(reg_syntax&RE_ICASE))
-            for (int c='a'; c<='z'; c++) push_char_set(char_set, c);
-        for (int c='0'; c<='9'; c++) push_char_set(char_set, c);
+        set_alnum(char_set);
         regexp += 5;
-    } else if (strncmp(regexp, "word", 4)==0) {
-        for (int c='A'; c<='Z'; c++) push_char_set(char_set, c);
-        if (!(reg_syntax&RE_ICASE))
-            for (int c='a'; c<='z'; c++) push_char_set(char_set, c);
-        for (int c='0'; c<='9'; c++) push_char_set(char_set, c);
+    } else if (strncmp(regexp, "word", 4)==0) {             //alnum + '_'
+        set_alnum(char_set);
         push_char_set(char_set, '_');
         regexp += 4;
     } else if (strncmp(regexp, "digit", 5)==0) {
@@ -780,27 +769,26 @@ static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_s
             for (int c='a'; c<='f'; c++) push_char_set(char_set, c);
         regexp += 6;
     } else if (strncmp(regexp, "punct", 5)==0) {
-        push_char_set_str(char_set, "#[]!\"#$%&'()*+,-./:;<=>?@[\\^_`{|}~-]");
+        set_punct(char_set);
         regexp += 5;
-    } else if (strncmp(regexp, "blanc", 5)==0) {
+    } else if (strncmp(regexp, "blank", 5)==0) {
         push_char_set_str(char_set, " \t");
         regexp += 5;
     } else if (strncmp(regexp, "space", 5)==0) {
         push_char_set_str(char_set, " \t\n\r\f\v");
         regexp += 5;
     } else if (strncmp(regexp, "cntrl", 5)==0) {
-        for (int c=0x01; c<=0x1f; c++) push_char_set(char_set, c);    //0x00は除外
+        for (int c=0x00; c<=0x1f; c++) push_char_set(char_set, c);
         push_char_set(char_set, 0x7f);
         regexp += 5;
-    } else if (strncmp(regexp, "graph", 5)==0) {
-        char_set->reverse = 1;
-        push_char_set_str(char_set, " \t\n\r\f\v");
-        for (int c=0x01; c<=0x1f; c++) push_char_set(char_set, c);    //0x00は除外
+    } else if (strncmp(regexp, "graph", 5)==0) {            //alnum + punct
+        set_alnum(char_set);
+        set_punct(char_set);
         regexp += 5;
-    } else if (strncmp(regexp, "print", 5)==0) {
-        char_set->reverse = 1;
-        push_char_set_str(char_set, "\t\n\r\f\v");
-        for (int c=0x01; c<=0x1f; c++) push_char_set(char_set, c);    //0x00は除外
+    } else if (strncmp(regexp, "print", 5)==0) {            //alnum + punct + ' '
+        set_alnum(char_set);
+        set_punct(char_set);
+        push_char_set(char_set, ' ');
         regexp += 5;
     } else {
         reg_set_err(REG_ERR_CODE_INVALID_CHAR_CLASS);
@@ -913,10 +901,8 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
         return pat->c == ((reg_syntax&RE_ICASE)?toupper(*text):*text);
     case PAT_CHARSET:
         if (text_is_end(text)) return 0;
-        if (*text == '\n' && pat->cset.reverse && reg_syntax&RE_HAT_LISTS_NOT_NEWLINE) return 0;
-        if (strchr(pat->cset.chars, (reg_syntax&RE_ICASE)?toupper(*text):*text))
-            return !pat->cset.reverse;
-        return pat->cset.reverse;
+        if (*text == '\n' && pat->cset->reverse && reg_syntax&RE_HAT_LISTS_NOT_NEWLINE) return 0;
+        return pat->cset->chars[(reg_syntax&RE_ICASE)?toupper(*text):*text];
     case PAT_DOT:
         if (!(reg_syntax&RE_DOT_NEWLINE) && *text=='\n') return 0;
         if ((reg_syntax&RE_DOT_NOT_NULL) && *text=='\0') return 0;
@@ -1010,8 +996,8 @@ static void reg_pattern_free(pattern_t *pat) {
     if (pat==NULL) return;
     switch (pat->type) {
     case PAT_CHARSET:
-        free(pat->cset.chars);
-        pat->cset.chars = NULL;
+        free(pat->cset);
+        pat->cset = NULL;
         break;
     case PAT_SUBREG:
         reg_compile_free(pat->regcomp);
@@ -1090,7 +1076,7 @@ const char* reg_syntax2str(int syntax) {
     return reg_flag2str(syntax, syntax_tbl, sizeof(syntax_tbl)/sizeof(syntax_tbl[0]), buf);
 }
 void reg_print_str(FILE *fp, const char *bstr, int len) {
-    const char *p = bstr;
+    const unsigned char *p = (const unsigned char*)bstr;
     for(int i=0; i<len; i++, p++) {
         switch (*p) {
         case '\f': fputs("\\f", fp); break;
@@ -1099,8 +1085,16 @@ void reg_print_str(FILE *fp, const char *bstr, int len) {
         case '\t': fputs("\\t", fp); break;
         case '\v': fputs("\\v", fp); break;
         default:
-            if (iscntrl(*p)) fprintf(fp, "\\%03o", *p);
-            else             fputc(*p, fp);
+            if (iscntrl(*p) || *p>0x7f) fprintf(fp, "\\%03o", *p);
+            else fputc(*p, fp);
+        }
+    }
+}
+static void reg_print_char_set(FILE *fp, char_set_t *char_set) {
+    for (int i=0; i<256; i++) {
+        if (char_set->chars[i]) {
+            const unsigned char c = i;
+            reg_print_str(fp, (const char*)&c, 1);
         }
     }
 }
@@ -1135,8 +1129,8 @@ void reg_dump(FILE *fp, reg_compile_t *preg_compile, int indent) {
             break;
         }
         case PAT_CHARSET:
-            fprintf(fp, "%s[", pat->cset.reverse?"^":"");
-            reg_print_str(fp, pat->cset.chars, strlen(pat->cset.chars));
+            fprintf(fp, "%s[", pat->cset->reverse?"^":"");
+            reg_print_char_set(fp, pat->cset);
             fprintf(fp, "]\n");
             break;
         case PAT_REPEAT:  fprintf(fp, "{%d,%d}\n", pat->min, pat->max); break;

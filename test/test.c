@@ -10,30 +10,20 @@
 
 //テスト項目
 typedef struct {
-    const int no;           //テストNo:行番号
-    const char *text;       //検索文字列
-    const char *regexp;     //正規表現
-    const char *match[16];  //マッチした文字列の配列（全体＋グループ分）
-    const int nmatch;       //グループの数
-    const int expect;       //戻り値 0:OK, 1:不一致, -1:コンパイルエラー
-          int cflags;       //REG_EXTENDED|REG_ICASE|REG_NEWLINE|REG_NOSUB
-    const int eflags;       //REG_NOTBOL|REG_NOTEOL|REG_STARTEND
-} test_str_t;
-typedef struct {
     int no;                 //テストNo:行番号
     struct {
-        const char *text;   //検索文字列
-        int tlen;
+        const char *text;   //検索文字列。'\0'を含むことができる。
+        int tlen;           //長さ。0の場合はstrlen(text)
     };
     struct {
-        const char *regexp; //正規表現
-        int rlen;
+        const char *regexp; //正規表現。'\0'を含むことができる。
+        int rlen;           //長さ。0の場合はstrlen(regexp)
     };
-    struct {
-        const char *bstr;   //長さ指定のバイト列。'\0'を含むことができる。
-        int len;
+    struct {                //[0]:正規表現全体、[1]...:サブパターン
+        const char *bstr;   //マッチした文字列。'\0'を含むことができる。
+        int len;            //長さ。0の場合はstrlen(regexp)
     } match[16];            //マッチした文字列の配列（全体＋グループ分）
-    int nmatch;             //グループの数
+    int nmatch;             //サブパターンの数
     int expect;             //戻り値 0:OK, 1:不一致, -1:コンパイルエラー
     int cflags;             //REG_EXTENDED|REG_ICASE|REG_NEWLINE|REG_NOSUB
     int eflags;             //REG_NOTBOL|REG_NOTEOL|REG_STARTEND
@@ -45,16 +35,8 @@ typedef struct {
 #define REG_DUMP    0x20000     //強制的にダンプする
 #define REG_FLAGS_MASK 0xff
 
-test_str_t data[] = {
-    #include "test_dat.h"
-};
 test_bstr_t bdata[] = {
-    {__LINE__, {"ab\0cd",5},    {"b\0c",3},    {{"b\0c",3}},    1, 0, REG_BRE_ERE},
-    {__LINE__, {"ab\0cd",5},    {"b.c",3},     {{""}},          1, 1, REG_BRE_ERE}, //デフォルトでは.は\0にはマッチしない
-    {__LINE__, {"ab\0cd",5},    {"b.c",3},     {{"b\0c",3}},    1, 0, REG_BRE_ERE,0,0,RE_DOT_NOT_NULL}, //.を\0にマッチさせる
-    {__LINE__, {"ab\0\0cd",6},  {"b\0*c",4},   {{"b\0\0c",4}},  1, 0, REG_BRE_ERE},
-    {__LINE__, {"ab\0cd",5},    {"(b\0c)",5},  {{"b\0c",3},{"b\0c",3}}, 2, 0, REG_EXTENDED},
-    {__LINE__, {"ab\0cd",5},    {"b(\0)c",5},  {{"b\0c",3},{"\0",1}},   2, 0, REG_EXTENDED},
+    #include "test_dat.h"
 };
 
 static int gnu_regcomp (regex_t *preg, const char *pattern, size_t len, int cflags, int on_syntax, int off_syntax);
@@ -158,49 +140,6 @@ static int test_regexp(test_bstr_t *test_data) {
     return result;
 }
 
-static int test_str(void) {
-    int cnt = 0;
-    int err_cnt = 0;
-    int bre_cnt = 0;
-    int ere_cnt = 0;
-
-    int size = sizeof(data)/sizeof(test_str_t);
-    for (int i=0; i<size; i++) {
-        test_str_t *test = &data[i];
-        test_bstr_t btest = {0};
-        btest.no     = test->no;
-        btest.text   = test->text;
-        btest.tlen   = 0;
-        btest.regexp = test->regexp;
-        btest.rlen   = 0;
-        btest.nmatch = test->nmatch;
-        btest.expect = test->expect;
-        btest.cflags = test->cflags;
-        btest.eflags = test->eflags;
-        for (int i=0; i<btest.nmatch; i++) {
-            btest.match[i].bstr = test->match[i];
-            btest.match[i].len  = 0;
-        }
-        if (btest.text==NULL) break;
-        cnt++;
-        if (btest.cflags&REG_BRE_ERE) {
-            btest.cflags &= ~(REG_EXTENDED|REG_BRE_ERE);
-            if (test_regexp(&btest)==0) err_cnt++;    //BREでテスト
-            bre_cnt++;
-            btest.cflags |= REG_EXTENDED;
-            if (test_regexp(&btest)==0) err_cnt++;    //EREでテスト
-            ere_cnt++;
-        } else {
-            if (test_regexp(&btest)==0) err_cnt++;
-            if (btest.cflags&REG_EXTENDED) ere_cnt++;
-            else                           bre_cnt++;
-        }
-    }
-    printf("%s: %d/%d (BRE=%d, ERE=%d, skip=%d)\n",
-        err_cnt?"FAIL":"PASS", err_cnt?err_cnt:cnt, cnt, bre_cnt, ere_cnt, size-cnt);
-    return err_cnt;
-}
-
 static int test_bstr(void) {
     int cnt = 0;
     int err_cnt = 0;
@@ -255,7 +194,6 @@ static int test_misc(void) {
 
 int main(void) {
     int cnt = 0;
-    cnt += test_str();
     cnt += test_bstr();
     cnt += test_misc();
     return !(cnt==0);
