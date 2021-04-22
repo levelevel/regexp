@@ -202,6 +202,7 @@ typedef struct regcomp {
     unsigned int submatch_newline:1;//サブパターンで改行が^にマッチした（検索時の作業用）
     short nparen;           //()の数（0-9）
     short ref_num;          //SUBREGの場合の後方参照の番号（0-9）
+    int backref_list;       //(1 << n)ビットが1なら\nによる後方参照対象がこのsubreg内に存在する
     int cflags;             //正規表現のコンパイルフラグ(REG_EXTENDED|...)
     int eflags;             //正規表現の実行フラグ(REG_NOTBOL|...)
     int syntax;             //正規表現のsyntax。RE_*
@@ -244,7 +245,6 @@ static void reg_set_err(reg_err_code_t err_code);
 
 #define MAX_PAREN 9
 static int g_nparen;            //()の数(0-9)
-static int g_nparen_finished;   //完了した()の数
 int reg_syntax;                 //syntax (RE_*)
 static const char* g_regexp_end;//regexpの末尾の次の位置
 
@@ -279,7 +279,7 @@ reg_compile_t* reg_compile2(const char *regexp, size_t len, size_t *nsub, int cf
     }
     reg_set_err(0);
     reg_compile_t *preg_compile;
-    g_nparen = g_nparen_finished = 0;
+    g_nparen = 0;
     g_regexp_end = regexp + (len>=0?len:strlen(regexp));
     if (cflags&REG_ICASE) {
         syntax |= RE_ICASE;                 //ignore case
@@ -344,6 +344,7 @@ static void push_pattern(reg_compile_t *preg_compile, pattern_t *pat) {
             reg_compile_t *subreg;
             pat_subreg->regcomp = subreg = new_reg_compile(NULL);
             subreg->match_here = 1;
+            subreg->ref_num = -1;
             push_array(subreg->array, peek_array(preg_compile->array, num-2));
             push_array(subreg->array, peek_array(preg_compile->array, num-1));
             push_array(subreg->array, new_pattern(PAT_NULL));
@@ -366,7 +367,7 @@ static reg_compile_t *reg_exp(const char *regexp, pattern_type_t mode) {
 
     pattern_t *pat = NULL;
     reg_compile_t *subreg = preg_compile;
-    while (token_is_vbar(subreg->p)) {
+    while (token_is_vbar(subreg->p)) {          //'|'
         //"a|b|c"のパターンは以下の構成とする
         //reg_compile->array
         //    [0]pattern(PAT_OR)->or_array
@@ -377,11 +378,13 @@ static reg_compile_t *reg_exp(const char *regexp, pattern_type_t mode) {
             pat = new_pattern(PAT_OR);
             pat->or_array = new_array(0);
             subreg->match_here = 1;
-            subreg->ref_num = preg_compile->ref_num;
+            subreg->ref_num = -1;
             push_array(pat->or_array, subreg);
+            //親を作り、以後この下にSUBREGを追加する
             preg_compile = new_reg_compile(regexp);
             preg_compile->mode = mode;
             preg_compile->regexp = regexp;
+            preg_compile->backref_list = subreg->backref_list;
             push_pattern(preg_compile, pat);
             push_pattern(preg_compile, new_pattern(PAT_NULL));
         }
@@ -392,9 +395,10 @@ static reg_compile_t *reg_exp(const char *regexp, pattern_type_t mode) {
             return NULL;
         }
         subreg->match_here = 1;
-        subreg->ref_num = preg_compile->ref_num;
+        subreg->ref_num = -1;
         push_array(pat->or_array, subreg);
         preg_compile->p = subreg->p;
+        preg_compile->backref_list |= subreg->backref_list;
     }
 
     if (mode==PAT_SUBREG && token_is_close_paren(preg_compile->p)) {
@@ -518,7 +522,7 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
             reg_set_err(REG_ERR_CODE_UNMATCHED_PAREN);
         } else if (token1_is(preg_compile->p, '\\') && preg_compile->p[1]>='1' && preg_compile->p[1]<='9') {
             int num = preg_compile->p[1] - '0';
-            if (num>g_nparen_finished || num>MAX_PAREN) {
+            if (num>MAX_PAREN || (preg_compile->backref_list&(1 << num))==0) {
                 reg_set_err(REG_ERR_CODE_INVALID_BACK_REF);
             } else {
                 pat = new_pattern(PAT_BACKREF);
@@ -578,8 +582,9 @@ static reg_stat_t new_subreg(reg_compile_t *preg_compile) {
     pat->regcomp->match_here = 1;
     push_pattern(preg_compile, pat);
     preg_compile->p = pat->regcomp->p;
-    g_nparen_finished++;  //nparen番目のカッコの処理完了
     pat->regcomp->ref_num = ref_num;
+    preg_compile->backref_list |= pat->regcomp->backref_list;
+    preg_compile->backref_list |= (1 << ref_num);
     return REG_OK;
 }
 
@@ -826,7 +831,12 @@ int reg_exec(reg_compile_t *preg_compile, const char *text, size_t len, size_t n
     preg_compile->eflags = g_eflags = eflags;
     preg_compile->match_newline = 0;
     if (pmatch) {
-        memset(pmatch, 0, sizeof(pmatch[0])*nmatch);
+        pmatch[0].rm_so = 0;
+        pmatch[0].rm_eo = 0;
+        for (int i=1; i<nmatch; i++) {
+            pmatch[i].rm_so = -1;
+            pmatch[i].rm_eo = -1;
+        }
         g_nmatch = nmatch;
         g_pmatch = pmatch;
     } else {
@@ -852,8 +862,10 @@ static int reg_exec_main(reg_compile_t *preg_compile, const char *text, int *mat
         }
         if (preg_compile->match_here) break;
     } while (!text_is_end(text++));
-    g_pmatch[0].rm_so = 0;
-    g_pmatch[0].rm_eo = 0;
+    if (g_pmatch && g_pmatch[preg_compile->ref_num].rm_so<0) {
+        g_pmatch[preg_compile->ref_num].rm_so = 0;
+        g_pmatch[preg_compile->ref_num].rm_eo = 0;
+    }
     return 1;   //失敗
 }
 
@@ -862,8 +874,8 @@ static int set_match(reg_compile_t *preg_compile, const char *rm_sp, const char 
     int so = rm_sp - g_text;
     int eo = rm_ep - g_text;
     int match_len = eo - so;
-    if (g_pmatch) {
-        int idx = preg_compile->ref_num;
+    int idx = preg_compile->ref_num;
+    if (g_pmatch && idx>=0) {
         //\nに^がマッチした場合は開始位置を\nの次の位置に調整する。
         if (preg_compile->match_newline || preg_compile->submatch_newline) {
             assert(g_text[so]=='\n');
@@ -917,9 +929,10 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
     {
         assert(pat->ref_num<g_nmatch);
         regmatch_t *regmat = g_pmatch + pat->ref_num;
+        if (regmat->rm_so < 0) return 0;
         const char *substr = g_text + regmat->rm_so;
         int sublen = regmat->rm_eo - regmat->rm_so;
-        assert(sublen>0);
+        assert(sublen>=0);
         if (strncmp(text, substr, sublen)==0) {
             *match_len = sublen;
             return 1;
@@ -934,6 +947,12 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
             if (reg_exec_main(subreg, text, match_len)==0) {
                 preg_compile->submatch_newline = (subreg->match_newline || subreg->submatch_newline);
                 return 1;
+            }
+            for (int i=1; i<g_nmatch; i++) {
+                if (preg_compile->backref_list&(1 << i)) {
+                    g_pmatch[i].rm_so = -1;
+                    g_pmatch[i].rm_eo = -1;
+                }
             }
         }
         return 0;
@@ -1099,7 +1118,7 @@ static void reg_print_char_set(FILE *fp, char_set_t *char_set) {
     }
 }
 
-//reg_dump: dump compiles regexp
+//reg_dump: dump compiled regexp
 void reg_dump(FILE *fp, reg_compile_t *preg_compile, int indent) {
     fprintf(stderr, "%*s", indent, ""); // indent個の空白を出力
     if (preg_compile==NULL) {
@@ -1108,18 +1127,20 @@ void reg_dump(FILE *fp, reg_compile_t *preg_compile, int indent) {
     }
     fprintf(fp, "regexp='");
     reg_print_str(fp, preg_compile->regexp, preg_compile->rlen);
-    fprintf(fp, "', match_here=%d, newline_anchor=%d, nparen=%d, ref_num=%d, cflags=%s\n",
+    fprintf(fp, "', match_here=%d, newline_anchor=%d, nparen=%d, ref_num=%d, backref_list=%x, cflags=%s\n",
         preg_compile->match_here, preg_compile->newline_anchor, preg_compile->nparen, preg_compile->ref_num,
-        reg_cflags2str(preg_compile->cflags));
+        preg_compile->backref_list, reg_cflags2str(preg_compile->cflags));
 
-    fprintf(stderr, "%*s", indent, ""); // indent個の空白を出力
-    fprintf(fp, "syntax=%s\n", reg_syntax2str(preg_compile->syntax));
+    if (preg_compile->syntax) {
+        fprintf(stderr, "%*s", indent, ""); // indent個の空白を出力
+        fprintf(fp, "syntax=%s\n", reg_syntax2str(preg_compile->syntax));
+    }
 
     array_t *array = preg_compile->array;
     for (int i=0; i<array->num; i++) {
         pattern_t *pat = array->buckets[i];
         fprintf(stderr, "%*s", indent, ""); // indent個の空白を出力
-        fprintf(fp, "%2d: type=%-11s: ", i, pattern_type_str[pat->type]);
+        fprintf(fp, "PAT[%2d]: type=%-11s: ", i, pattern_type_str[pat->type]);
         switch (pat->type) {
         case PAT_CHAR:
         {

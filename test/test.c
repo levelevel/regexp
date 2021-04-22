@@ -94,10 +94,12 @@ static int test_regexp(test_bstr_t *test_data) {
         const char *bstr = test_data->match[i].bstr;
         int len = test_data->match[i].len;
         if (len==0) len = strlen(bstr);
+        int so1 = pmatch1?pmatch1[i].rm_so:-9;
+        int so2 = pmatch2?pmatch2[i].rm_so:-9;
+        int eo1 = pmatch1?pmatch1[i].rm_eo:-9;
+        int eo2 = pmatch2?pmatch2[i].rm_eo:-9;
         int match_sub = ret1<0 || ret2<0 ||
-            (len==pmatch2[i].rm_eo-pmatch2[i].rm_so &&
-            memcmp(test_data->text+pmatch2[i].rm_so, bstr, len)==0 &&
-            pmatch1[i].rm_so==pmatch2[i].rm_so && pmatch1[i].rm_eo==pmatch2[i].rm_eo);
+            (len==eo2-so2 && memcmp(test_data->text+so2, bstr, len)==0 && so1==so2 && eo1==eo2);
         if (ret1 != ret2 || ret1 != test_data->expect || !match_sub || nmatch1!=nmatch2) result = 0;
         if (result==0 || dump_flag) {
             printf("%s: line=%d[%d]: ret=%d:%d text='", result==0?"ERROR":"DUMP", n, i, ret1, ret2);
@@ -105,12 +107,11 @@ static int test_regexp(test_bstr_t *test_data) {
             printf("', regexp='");
             reg_print_str(stdout, regexp, rlen);
             printf("', nmatch=%ld:%ld, cflags=%s, eflags=%s, syntax+=%s, ",
-                nmatch1, nmatch2, reg_cflags2str(test_data->cflags), reg_eflags2str(test_data->eflags), reg_syntax2str(test_data->on_syntax));
+                nmatch1, nmatch2, reg_cflags2str(test_data->cflags),
+                reg_eflags2str(test_data->eflags), reg_syntax2str(test_data->on_syntax));
             printf("syntax-=%s\n", reg_syntax2str(test_data->off_syntax));
             if (1 || !match_sub || dump_flag) {
-                printf("  pmatch1=[%d,%d], pmatch2=[%d,%d], expected_match='",
-                    nmatch1?pmatch1[i].rm_so:-1, nmatch1?pmatch1[i].rm_eo:-1,
-                    nmatch2?pmatch2[i].rm_so:-1, nmatch2?pmatch2[i].rm_eo:-1);
+                printf("  pmatch1=[%d,%d], pmatch2=[%d,%d], expected_match='", so1, eo1, so2, eo2);
                 reg_print_str(stdout, bstr, len);
                 printf("'\n");
             }
@@ -120,7 +121,7 @@ static int test_regexp(test_bstr_t *test_data) {
         reg_dump(stdout, preg_compile, 2);
         gnu_dump(&preg);
     }
-    if ((errcode>1 && errcode!=reg_err_info.err_code) || dump_flag ||
+    if (result==0 || (errcode>1 && errcode!=reg_err_info.err_code) || dump_flag ||
         (errcode && strncmp(gnu_err_info.err_msg, reg_err_info.err_msg, 10)!=0)) {
         printf("%d: regex:  regexp='", n);
         reg_print_str(stdout, regexp, rlen);

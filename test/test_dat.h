@@ -216,17 +216,20 @@
     {__LINE__, {"abcd"},        {"(^abc$)d"},       {{""}},                 1, 1, REG_EXTENDED},
     {__LINE__, {"abc"},         {"(^[abc]*$)"},     {{"abc"},{"abc"}},      2, 0, REG_EXTENDED},
 
-    {__LINE__, {"abc"},         {"((abc))"},        {{"abc"},{"abc"},{"abc"}},  3, 0, REG_EXTENDED},
-    {__LINE__, {"abc"},         {"(a(b)c)"},        {{"abc"},{"abc"},{"b"}},    3, 0, REG_EXTENDED},
-    {__LINE__, {"abcabc"},      {"(a(b)c)*"},       {{"abcabc"},{"abc"},{"b"}}, 3, 0, REG_EXTENDED},
-    {__LINE__, {"aba"},         {"(a).\\1"},        {{"aba"},{"a"}},            2, 0, REG_EXTENDED},
-    {__LINE__, {"abcabc"},      {"a(bc)a\\1"},      {{"abcabc"},{"bc"}},        2, 0, REG_EXTENDED},
-    {__LINE__, {"abcabc"},      {"(a(bc))\\1"},     {{"abcabc"},{"abc"},{"bc"}},3, 0, REG_EXTENDED},
-    {__LINE__, {"abcabc"},      {"(a)(b)c\\1\\2"},  {{"abcab"},{"a"},{"b"}},    3, 0, REG_EXTENDED},
-    {__LINE__, {"abcabc"},      {"(...)\\1"},       {{"abcabc"},{"abc"}},       2, 0, REG_EXTENDED},
+    {__LINE__, {"abc"},         {"((abc))"},        {{"abc"},{"abc"},{"abc"}},      3, 0, REG_EXTENDED},
+    {__LINE__, {"abc"},         {"(a(b)c)"},        {{"abc"},{"abc"},{"b"}},        3, 0, REG_EXTENDED},
+    {__LINE__, {"abcabc"},      {"(a(b)c)*"},       {{"abcabc"},{"abc"},{"b"}},     3, 0, REG_EXTENDED},
+    {__LINE__, {"aba"},         {"(a).\\1"},        {{"aba"},{"a"}},                2, 0, REG_EXTENDED},
+    {__LINE__, {"aba"},         {"((a).\\2)"},      {{"aba"},{"aba"},{"a"}},        3, 0, REG_EXTENDED},
+    {__LINE__, {"aba"},         {"((a).)\\2"},      {{"aba"},{"ab"},{"a"}},         3, 0, REG_EXTENDED},
+    {__LINE__, {"abcabc"},      {"a(bc)a\\1"},      {{"abcabc"},{"bc"}},            2, 0, REG_EXTENDED},
+    {__LINE__, {"abcabc"},      {"(a(bc))\\1"},     {{"abcabc"},{"abc"},{"bc"}},    3, 0, REG_EXTENDED},
+    {__LINE__, {"abcabc"},      {"(a)(b)c\\1\\2"},  {{"abcab"},{"a"},{"b"}},        3, 0, REG_EXTENDED},
+    {__LINE__, {"abcabc"},      {"((a)(b)c\\2)\\3"},{{"abcab"},{"abca"},{"a"},{"b"}},3, 0, REG_EXTENDED},
+    {__LINE__, {"abcabc"},      {"(...)\\1"},       {{"abcabc"},{"abc"}},           2, 0, REG_EXTENDED},
     {__LINE__, {"<span>abc</span>"}, {"<(span)>.*</\\1>"},
                                                     {{"<span>abc</span>"},{"span"}},2, 0, REG_EXTENDED},
-    {__LINE__, {"aaabbbbc"},    {"([a-z])\\1{3}"},  {{"bbbb"},{"b"}},           2, 0, REG_EXTENDED},
+    {__LINE__, {"aaabbbbc"},    {"([a-z])\\1{3}"},  {{"bbbb"},{"b"}},               2, 0, REG_EXTENDED},
 
     {__LINE__, {"ab0"},         {"\\0"},            {{"0"}},                1, 0, REG_BRE_ERE},
     {__LINE__, {"aba"},         {"\\1"},            {{""}},                 1,-1, REG_BRE_ERE},
@@ -234,6 +237,7 @@
     {__LINE__, {"aba"},         {"\\(a\\1\\)."},    {{""}},                 1,-1, REG_BASIC},
     {__LINE__, {"aba"},         {"(a).\\9"},        {{""}},                 1,-1, REG_EXTENDED},
     {__LINE__, {"aba"},         {"(a\\1)."},        {{""}},                 1,-1, REG_EXTENDED},
+    {__LINE__, {"abb"},         {"\\1(b)"},         {{""}},                 1,-1, REG_EXTENDED},
 
     {__LINE__, {"a|b"},         {"a\\|b"},          {{"a"}},                1, 0, REG_BASIC},
     {__LINE__, {"a|b"},         {"a|b"},            {{"a|b"}},              1, 0, REG_BASIC},
@@ -253,7 +257,17 @@
     {__LINE__, {"012345678910"},{"(1)(2)(3)(4)(5)(6)(7)(8)(9)(10)"},
                {{"12345678910"},{"1"},{"2"},{"3"},{"4"},{"5"},{"6"},{"7"},{"8"},{"9"},{"10"}},
                                                                             11,0, REG_EXTENDED},//9を超えるサブパターンもOK
-//  {__LINE__, {"abc"},         {"(a)|(\\1b)"},     {{""}},                 1,-1, REG_EXTENDED},//エラーになるべき
+
+    {__LINE__, {"aabb"},        {"(a)|(\\1b)"},     {{""}},                 1,-1, REG_EXTENDED},//エラーになるべき
+    {__LINE__, {"aabb"},        {"(a)\\1|b)"},      {{"aa"},{"a"}},         2, 0, REG_EXTENDED},
+    {__LINE__, {"aabb"},        {"(c)\\1|b)"},      {{""}},                 1, 1, REG_EXTENDED},
+    {__LINE__, {"aabb"},        {"(a)\\1|\\1b)"},   {{""}},                 1,-1, REG_EXTENDED},
+    {__LINE__, {"aabb"},        {"((a)|(b))\\1"},   {{"aa"},{"a"},{"a"},{""}}, 4, 0, REG_EXTENDED},
+    {__LINE__, {"aabb"},        {"((a)|(b))\\2"},   {{"aa"},{"a"},{"a"},{""}}, 4, 0, REG_EXTENDED},
+    {__LINE__, {"aabb"},        {"((a)|(b))\\3"},   {{"bb"},{"b"},{""},{"b"}}, 4, 0, REG_EXTENDED},
+    {__LINE__, {"ab"},          {"((a)|(b))\\1"},   {{""}},                 1, 1, REG_EXTENDED},
+    {__LINE__, {"ab"},          {"((a)|(b))\\2"},   {{""}},                 1, 1, REG_EXTENDED},
+    {__LINE__, {"ab"},          {"((a)|(b))\\3"},   {{""}},                 1, 1, REG_EXTENDED},
 
     {__LINE__, {"XYZ123_"},     {"[[:upper:]]*"},   {{"XYZ"}},              1, 0, REG_BRE_ERE},
     {__LINE__, {"abcXYZ123_"},  {"[[:upper:][:lower:]]*"}, {{"abcXYZ"}},    1, 0, REG_BRE_ERE},
