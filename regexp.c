@@ -864,6 +864,7 @@ static int reg_exec_main(reg_compile_t *preg_compile, const char *text, int *mat
     assert(preg_compile->array);
     const char *rm_ep;
     pattern_t **pat = (pattern_t**)preg_compile->array->buckets;
+
     do {    /* must look even if string is empty */
         g_text_bol = text;
         if (reg_match_here(preg_compile, pat, text, &rm_ep)) {
@@ -873,6 +874,7 @@ static int reg_exec_main(reg_compile_t *preg_compile, const char *text, int *mat
         }
         if (preg_compile->match_here) break;
     } while (!text_is_end(text++));
+
     if (g_pmatch && g_pmatch[preg_compile->ref_num].rm_so<0) {
         g_pmatch[preg_compile->ref_num].rm_so = 0;
         g_pmatch[preg_compile->ref_num].rm_eo = 0;
@@ -1004,9 +1006,11 @@ static int reg_match_repeat(reg_compile_t *preg_compile, pattern_t **pat, const 
     int cnt = 0;
     int ret = 0;
     int len;
+
     do {    /* a \{0,n\} matches zero or more instances */
         if (cnt++>=rep->min && reg_match_here(preg_compile, pat+2, text, rm_ep)) ret = 1;   //最短一致ならここでreturn 1する
     } while (reg_match_pat(preg_compile, c, text, &len) && (text+=len) && cnt<=rep->max);
+
     return ret;
 }
 

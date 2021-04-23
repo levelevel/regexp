@@ -10,6 +10,7 @@
     {__LINE__, {"abc"},         {"cd"},             {{""}},                 1, 1, REG_BRE_ERE},
     {__LINE__, {"abc"},         {"abc"},            {{"abc"}},              1, 0, REG_BRE_ERE},
     {__LINE__, {"abc"},         {""},               {{""}},                 1, 0, REG_BRE_ERE},
+    {__LINE__, {""},            {""},               {{""}},                 1, 0, REG_BRE_ERE},
 
     {__LINE__, {"abc"},         {"^a"},             {{"a"}},                1, 0, REG_BRE_ERE},
     {__LINE__, {"abc"},         {"a$"},             {{""}},                 1, 1, REG_BRE_ERE},
