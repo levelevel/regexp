@@ -37,7 +37,7 @@
 // A Regular Expression Matcher
 // Code by Rob Pike
 
-//regex.h -------------------------------------------------------------
+// /usr/include/regex.h ---------------------------------------------------
 
 /* If this bit is set, then ^ and $ are always anchors (outside bracket
      expressions, of course).
@@ -138,8 +138,11 @@
 //#define REG_NOTBOL 1
 /* Like REG_NOTBOL, except for the end-of-line.  */
 //#define REG_NOTEOL (1 << 1)
+/* Use PMATCH[0] to delimit the start and end of the search in the
+   buffer.  */
+//#define REG_STARTEND (1 << 2)
 
-//regex.h -------------------------------------------------------------
+// /usr/include/regex.h ---------------------------------------------------
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -812,9 +815,10 @@ static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_s
 
 #define text_is_end(p) ((p)>=g_text_end)
 //検索時の作業用
-static const char *g_text;      //オリジナル検索文字列（^にマッチさせる位置）
-static const char *g_text_end;  //検索文字列の末尾の次の位置
-static const char *g_start;     //パターン一致の開始位置
+static const char* g_text_org;  //オリジナル検索文字列
+static const char *g_text;      //検索文字列の先頭
+static const char *g_text_end;  //検索文字列の末尾の次の位置（文字列の終了判定に用いる）
+static const char *g_text_bol;  //パターン一致の開始位置（^にマッチさせる位置。\nの影響を受ける）
 static int g_newline_anchor;    //\nをアンカーとする（^/$にマッチする）
 static size_t      g_nmatch;    //pmatchの要素数
 static regmatch_t *g_pmatch;    //マッチング位置
@@ -824,8 +828,15 @@ static int         g_eflags;
 //成功した場合は0、失敗した場合は0以外を返す。
 int reg_exec(reg_compile_t *preg_compile, const char *text, size_t len, size_t nmatch, regmatch_t *pmatch, int eflags) {
     if (preg_compile==NULL || text==NULL) return 1;
-    g_text = text;
-    g_text_end = text + (len>=0?len:strlen(text));
+    if (len<0) len = strlen(text);  //lenが負の値の場合はtextをnul終端の文字列とみなす
+    g_text_org = text;
+    if ((eflags&REG_STARTEND) && pmatch) {
+        g_text     = text + pmatch[0].rm_so;
+        g_text_end = text + pmatch[0].rm_eo;
+    } else {
+        g_text     = text;
+        g_text_end = text + len;
+    }
     reg_syntax = preg_compile->syntax;
     g_newline_anchor = preg_compile->newline_anchor;
     preg_compile->eflags = g_eflags = eflags;
@@ -844,7 +855,7 @@ int reg_exec(reg_compile_t *preg_compile, const char *text, size_t len, size_t n
         g_pmatch = NULL;
     }
     int match_len;
-    return reg_exec_main(preg_compile, text, &match_len);
+    return reg_exec_main(preg_compile, g_text, &match_len);
 }
 // reg_exec_main: search for compiled regexp anywhere in text
 //成功した場合は0、失敗した場合は0以外を返す。
@@ -854,7 +865,7 @@ static int reg_exec_main(reg_compile_t *preg_compile, const char *text, int *mat
     const char *rm_ep;
     pattern_t **pat = (pattern_t**)preg_compile->array->buckets;
     do {    /* must look even if string is empty */
-        g_start = text;
+        g_text_bol = text;
         if (reg_match_here(preg_compile, pat, text, &rm_ep)) {
             set_match(preg_compile, text, rm_ep);
             *match_len = rm_ep - text;
@@ -871,14 +882,14 @@ static int reg_exec_main(reg_compile_t *preg_compile, const char *text, int *mat
 
 //マッチング位置のインデックスを記録し、マッチした文字列の長さを返す。
 static int set_match(reg_compile_t *preg_compile, const char *rm_sp, const char *rm_ep) {
-    int so = rm_sp - g_text;
-    int eo = rm_ep - g_text;
+    int so = rm_sp - g_text_org;
+    int eo = rm_ep - g_text_org;
     int match_len = eo - so;
     int idx = preg_compile->ref_num;
     if (g_pmatch && idx>=0) {
         //\nに^がマッチした場合は開始位置を\nの次の位置に調整する。
         if (preg_compile->match_newline || preg_compile->submatch_newline) {
-            assert(g_text[so]=='\n');
+            assert(g_text_org[so]=='\n');
             so++;
         }
         g_pmatch[idx].rm_so = so;
@@ -958,11 +969,11 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
         return 0;
     }
     case PAT_CARET:
-        if (g_newline_anchor && g_start==text && *text=='\n') {
+        if (g_newline_anchor && g_text_bol==text && *text=='\n') {
             preg_compile->match_newline = 1;
             *match_len = 1;
             return 1;
-        } else if (g_newline_anchor && g_start<text && *(text-1)=='\n') {
+        } else if (g_newline_anchor && g_text_bol<text && *(text-1)=='\n') {
             *match_len = 0;
             return 1;
         } else if (!(g_eflags&REG_NOTBOL) && text==g_text) {
@@ -1052,6 +1063,7 @@ static name_tbl_t cflags_tbl[] = {
 static name_tbl_t eflags_tbl[] = {
     REG_TBL(NOTBOL),
     REG_TBL(NOTEOL),
+    REG_TBL(STARTEND),
 };
 static name_tbl_t syntax_tbl[] = {
     RE_TBL(CONTEXT_INDEP_ANCHORS),
@@ -1104,7 +1116,7 @@ void reg_print_str(FILE *fp, const char *bstr, int len) {
         case '\t': fputs("\\t", fp); break;
         case '\v': fputs("\\v", fp); break;
         default:
-            if (iscntrl(*p) || *p>0x7f) fprintf(fp, "\\%03o", *p);
+            if (iscntrl(*p) || *p>=0x80) fprintf(fp, "\\%03o", *p);
             else fputc(*p, fp);
         }
     }

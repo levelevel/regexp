@@ -1,5 +1,5 @@
 //test_str_t data[] = {
-//   no.        text,tlen,       regexp,rlen,        {bstr,len},...         nmatch,expect,cflags,eflags,on_syntax,off_syntax
+//   no.        text,tlen,       regexp,rlen,        {bstr,len},...         nmatch,expect,cflags,eflags,on_syntax,off_syntax,start,end
     {__LINE__, {"abc"},         {"a"},              {{"a"}},                1, 0, REG_BRE_ERE},
     {__LINE__, {"abc"},         {"b"},              {{"b"}},                1, 0, REG_BRE_ERE},
     {__LINE__, {"abc"},         {"c"},              {{"c"}},                1, 0, REG_BRE_ERE},
@@ -164,7 +164,7 @@
     {__LINE__, {"abc"},         {".{3}"},           {{"abc"}},              1, 0, REG_EXTENDED},
     {__LINE__, {"abc"},         {".{4}"},           {{""}},                 1, 1, REG_EXTENDED},
 
-//   no.        text,tlen,       regexp,rlen,        {bstr,len},...         nmatch,expect,cflags,eflags,on_syntax,off_syntax
+//   no.        text,tlen,       regexp,rlen,        {bstr,len},...         nmatch,expect,cflags,eflags,on_syntax,off_syntax,start,end
     {__LINE__, {"abc"},         {"\\(a\\)"},        {{"a"},{"a"}},          2, 0, REG_BASIC},
     {__LINE__, {"abc"},         {"(a)"},            {{"a"},{"a"}},          2, 0, REG_EXTENDED},
     {__LINE__, {"abc"},         {"(c)"},            {{"c"},{"c"}},          2, 0, REG_EXTENDED},
@@ -280,7 +280,7 @@
     {__LINE__, {"x123ABCdefx"}, {"x[[:xdigit:]]*"}, {{"x123ABCdef"}},       1, 0, REG_BRE_ERE},
     {__LINE__, {"[:-+a]"},      {"[[:punct:]]*"},   {{"[:-+"}},             1, 0, REG_BRE_ERE},
     {__LINE__, {" \tz"},        {"[[:blank:]]*"},   {{" \t"}},              1, 0, REG_BRE_ERE},
-    {__LINE__, {"\01a"},        {"[[:cntrl:]]*"},   {{"\01"}},              1, 0, REG_BRE_ERE},
+    {__LINE__, {"\01\177"},     {"[[:cntrl:]]*"},   {{"\01\177"}},          1, 0, REG_BRE_ERE},
     {__LINE__, {"abc \t"},      {"[[:graph:]]*"},   {{"abc"}},              1, 0, REG_BRE_ERE},
     {__LINE__, {"abc \t"},      {"[[:print:]]*"},   {{"abc "}},             1, 0, REG_BRE_ERE},
     {__LINE__, {"abc"},         {"[:alpha:]*"},     {{"a"}},                1, 0, REG_BRE_ERE},
@@ -290,6 +290,7 @@
     {__LINE__, {"abc"},         {"[[:alpha:]-z]"},  {{""}},                 1,-1, REG_BRE_ERE},
     {__LINE__, {"a\377c"},      {"[^[:alpha:]]"},   {{"\377"}},             1, 0, REG_BRE_ERE},
 
+//  REG_ICASE
     {__LINE__, {"aBc"},         {"aBc"},            {{"aBc"}},              1, 0, REG_BRE_ERE|REG_ICASE},
     {__LINE__, {"aBc"},         {"Abc"},            {{"aBc"}},              1, 0, REG_BRE_ERE|REG_ICASE},
     {__LINE__, {"aBc"},         {"[a-z]*"},         {{"aBc"}},              1, 0, REG_BRE_ERE|REG_ICASE},
@@ -298,6 +299,7 @@
     {__LINE__, {"aBc"},         {"[[:lower:]]*"},   {{"aBc"}},              1, 0, REG_BRE_ERE|REG_ICASE},
     {__LINE__, {"aBc"},         {"[[:alpha:]]*"},   {{"aBc"}},              1, 0, REG_BRE_ERE|REG_ICASE},
 
+//  REG_NEWLINE
     {__LINE__, {"abc\n"},       {"c\n"},            {{"c\n"}},              1, 0, REG_BRE_ERE},
     {__LINE__, {"abc\n"},       {"c\n"},            {{"c\n"}},              1, 0, REG_BRE_ERE|REG_NEWLINE},
     {__LINE__, {"ab\nc"},       {"b\nc"},           {{"b\nc"}},             1, 0, REG_BRE_ERE|REG_NEWLINE},
@@ -343,6 +345,7 @@
     {__LINE__, {"ab\nxy"},      {"ab[^a-z]"},       {{""}},                 1, 1, REG_BRE_ERE|REG_NEWLINE}, //[^...]は\nにマッチしない
     {__LINE__, {"ab\nxy"},      {"ab[\n]"},         {{"ab\n"}},             1, 0, REG_BRE_ERE|REG_NEWLINE},
 
+//  REG_NOTBOL,REG_NOTEOL
     {__LINE__, {"ab\nxy"},      {"^ab"},            {{"ab"}},               1, 0, REG_BRE_ERE},
     {__LINE__, {"ab\nxy"},      {"^ab"},            {{""}},                 1, 1, REG_BRE_ERE,REG_NOTBOL},  //文字列の開始を^にマッチさせない
     {__LINE__, {"ab\nxy"},      {"^xy"},            {{"xy"}},               1, 0, REG_BRE_ERE|REG_NEWLINE,REG_NOTBOL},
@@ -350,6 +353,14 @@
     {__LINE__, {"ab\nxy"},      {"xy$"},            {{""}},                 1, 1, REG_BRE_ERE,REG_NOTEOL},  //文字列の最後を$にマッチさせない
     {__LINE__, {"ab\nxy"},      {"ab$"},            {{"ab"}},               1, 0, REG_BRE_ERE|REG_NEWLINE,REG_NOTEOL},
 
+//   no.        text,tlen,       regexp,rlen,        {bstr,len},...         nmatch,expect,cflags,eflags,on_syntax,off_syntax,start,end
+//  REG_STARTEND
+    {__LINE__, {"aabbcc"},      {"bb"},             {{"bb"}},               1, 0, REG_BRE_ERE},
+    {__LINE__, {"aabbcc"},      {"bb"},             {{"bb"}},               1, 0, REG_BRE_ERE,REG_STARTEND},
+    {__LINE__, {"aabbcc"},      {"b*"},             {{""}},                 1, 0, REG_BRE_ERE},
+    {__LINE__, {"aabbcc"},      {"b*"},             {{"bb"}},               1, 0, REG_BRE_ERE,REG_STARTEND,0,0,{2}},
+
+//  \0を含む処理
     {__LINE__, {"ab\0cd",5},    {"b\0c",3},         {{"b\0c",3}},           1, 0, REG_BRE_ERE},
     {__LINE__, {"ab\0cd",5},    {"b.c",3},          {{""}},                 1, 1, REG_BRE_ERE}, //デフォルトでは.は\0にはマッチしない
     {__LINE__, {"ab\0cd",5},    {"b.c",3},          {{"b\0c",3}},           1, 0, REG_BRE_ERE,0,0,RE_DOT_NOT_NULL}, //.を\0にマッチさせる

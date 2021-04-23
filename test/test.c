@@ -29,18 +29,27 @@ typedef struct {
     int eflags;             //REG_NOTBOL|REG_NOTEOL|REG_STARTEND
     int on_syntax;          //追加するsyntax
     int off_syntax;         //削除するsyntax
+    struct {
+        int start;          //検索文字列の開始・終了位置のインデックス(REG_STARTEND指定時)
+        int end;            //endが0の場合はtlen
+    };
 } test_bstr_t;
 #define REG_BASIC   0
-#define REG_BRE_ERE 0x10000     //cflagsでBER/ERB共通テスト項目（REG_EXTENDED有無両方でテストする）
-#define REG_DUMP    0x20000     //強制的にダンプする
-#define REG_FLAGS_MASK 0xff
+#define REG_BRE_ERE 0x10000     //cflags:BER/ERB共通テスト項目（REG_EXTENDED有無両方でテストする）
+#define REG_DUMP    0x20000     //cflags:強制的にダンプする
+#define REG_CFLAGS_MASK 0xffff
 
 test_bstr_t bdata[] = {
     #include "test_dat.h"
 };
 
+//リファレンス関数として何を使うかを指定する。
+//1: POSIX版(regcomp/regexec)
+//0: GNU版(re_set_syntax/re_search)
+static int use_posix_version;
+
 static int gnu_regcomp (regex_t *preg, const char *pattern, size_t len, int cflags, int on_syntax, int off_syntax);
-static int gnu_regexec (regex_t *preg, const char *string, size_t len, size_t nmatch, regmatch_t pmatch[], int eflags);
+static int gnu_regexec (regex_t *preg, const char *string, size_t len, size_t nmatch, regmatch_t pmatch[], test_bstr_t *test);
 static void gnu_dump(regex_t *preg);
 static reg_err_info_t gnu_err_info; //エラー情報
 
@@ -55,18 +64,23 @@ static int test_regexp(test_bstr_t *test_data) {
     int result = 1; //1:OK, 0:NG
     if (tlen==0 && text)   tlen = strlen(text);
     if (rlen==0 && regexp) rlen = strlen(regexp);
+    if ((test_data->eflags&REG_STARTEND) && test_data->end==0) test_data->end = tlen;
 
     //regex
     regex_t preg = {0};
     regmatch_t *pmatch1 = NULL;
     size_t nmatch1 = 0;
-    errcode = gnu_regcomp(&preg, regexp, rlen, test_data->cflags&REG_FLAGS_MASK, test_data->on_syntax, test_data->off_syntax);
+    errcode = gnu_regcomp(&preg, regexp, rlen, test_data->cflags&REG_CFLAGS_MASK, test_data->on_syntax, test_data->off_syntax);
     if (errcode!=0) {
         ret1 = -1;
     } else {
         nmatch1 = preg.re_nsub+1;
         pmatch1 = calloc(nmatch1, sizeof(regmatch_t));
-        ret1 = gnu_regexec(&preg, text, tlen, nmatch1, pmatch1, test_data->eflags);
+        if (test_data->eflags&REG_STARTEND) {
+            pmatch1[0].rm_so = test_data->start;
+            pmatch1[0].rm_eo = test_data->end;
+        }
+        ret1 = gnu_regexec(&preg, text, tlen, nmatch1, pmatch1, test_data);
     }
 
     //regexp
@@ -77,15 +91,19 @@ static int test_regexp(test_bstr_t *test_data) {
         int syntax = ((test_data->cflags & REG_EXTENDED) ? RE_SYNTAX_POSIX_EXTENDED : RE_SYNTAX_POSIX_BASIC);
         syntax |= test_data->on_syntax;
         syntax &= ~test_data->off_syntax;
-        preg_compile = reg_compile2(regexp, rlen, &nmatch2, test_data->cflags&REG_FLAGS_MASK, syntax);
+        preg_compile = reg_compile2(regexp, rlen, &nmatch2, test_data->cflags&REG_CFLAGS_MASK, syntax);
     } else {
-        preg_compile = reg_compile(regexp, rlen, &nmatch2, test_data->cflags&REG_FLAGS_MASK);
+        preg_compile = reg_compile(regexp, rlen, &nmatch2, test_data->cflags&REG_CFLAGS_MASK);
     }
     if (preg_compile==NULL) {
         ret2 = -1;
     } else {
         nmatch2++;
         pmatch2 = calloc(nmatch2, sizeof(regmatch_t));
+        if (test_data->eflags&REG_STARTEND) {
+            pmatch2[0].rm_so = test_data->start;
+            pmatch2[0].rm_eo = test_data->end;
+        }
         ret2 = reg_exec(preg_compile, text, tlen, nmatch2, pmatch2, test_data->eflags);
     }
 
@@ -106,10 +124,13 @@ static int test_regexp(test_bstr_t *test_data) {
             reg_print_str(stdout, text, tlen);
             printf("', regexp='");
             reg_print_str(stdout, regexp, rlen);
-            printf("', nmatch=%ld:%ld, cflags=%s, eflags=%s, syntax+=%s, ",
+            printf("', nmatch=%ld:%ld, cflags=%s, eflags=%s, use_posix=%d",
                 nmatch1, nmatch2, reg_cflags2str(test_data->cflags),
-                reg_eflags2str(test_data->eflags), reg_syntax2str(test_data->on_syntax));
-            printf("syntax-=%s\n", reg_syntax2str(test_data->off_syntax));
+                reg_eflags2str(test_data->eflags), use_posix_version);
+            if (test_data->on_syntax)  printf(", syntax+=%s", reg_syntax2str(test_data->on_syntax));
+            if (test_data->off_syntax) printf(", syntax-=%s", reg_syntax2str(test_data->off_syntax));
+            printf(", startend=%d,%d", test_data->start, test_data->end);
+            printf("\n");
             if (1 || !match_sub || dump_flag) {
                 printf("  pmatch1=[%d,%d], pmatch2=[%d,%d], expected_match='", so1, eo1, so2, eo2);
                 reg_print_str(stdout, bstr, len);
@@ -146,11 +167,17 @@ static int test_bstr(void) {
     int err_cnt = 0;
     int bre_cnt = 0;
     int ere_cnt = 0;
+    int posix_cnt = 0;  //POSIX版(regcomp/regexec)
+    int gnu_cnt   = 0;  //GNU版(re_set_syntax/re_search)
 
     int size = sizeof(bdata)/sizeof(test_bstr_t);
     for (int i=0; i<size; i++) {
         test_bstr_t *btest = &bdata[i];
         if (btest->no==0) break;
+        use_posix_version = 1;
+        if (btest->tlen || btest->rlen) use_posix_version = 0;
+        if (use_posix_version) posix_cnt++;
+        else                   gnu_cnt++;
         cnt++;
         if (btest->cflags&REG_BRE_ERE) {
             btest->cflags &= ~(REG_EXTENDED|REG_BRE_ERE);
@@ -165,8 +192,8 @@ static int test_bstr(void) {
             else                            bre_cnt++;
         }
     }
-    printf("%s: %d/%d (BRE=%d, ERE=%d, skip=%d)\n",
-        err_cnt?"FAIL":"PASS", err_cnt?err_cnt:cnt, cnt, bre_cnt, ere_cnt, size-cnt);
+    printf("%s: %d/%d (BRE=%d, ERE=%d, skip=%d) (posix=%d, gnu=%d)\n",
+        err_cnt?"FAIL":"PASS", err_cnt?err_cnt:cnt, cnt, bre_cnt, ere_cnt, size-cnt, posix_cnt, gnu_cnt);
     return err_cnt;
 }
 
@@ -200,10 +227,6 @@ int main(void) {
     return !(cnt==0);
 }
 
-//リファレンス関数として何を使うかを指定する。
-//1: POSIX版(regcomp/regexec)
-//0: GNU版(re_set_syntax/re_search)
-static int use_posix_version = 0;
 static int gnu_regcomp(regex_t *preg, const char *pattern, size_t len, int cflags, int on_syntax, int off_syntax) {
     int ret = 0;
     static char buf[128];
@@ -230,7 +253,6 @@ static int gnu_regcomp(regex_t *preg, const char *pattern, size_t len, int cflag
         syntax |= on_syntax;
         syntax &= ~off_syntax;
         preg->no_sub = !!(cflags & REG_NOSUB);
-        //preg->fastmap = calloc (256, sizeof(char));
 
         re_set_syntax(syntax);
         const char *err_str = re_compile_pattern(pattern, len, preg);
@@ -248,22 +270,33 @@ static int gnu_regcomp(regex_t *preg, const char *pattern, size_t len, int cflag
     }
     return ret;
 }
-static int gnu_regexec(regex_t *preg, const char *string, size_t len, size_t nmatch, regmatch_t pmatch[], int eflags) {
+static int gnu_regexec(regex_t *preg, const char *string, size_t len, size_t nmatch, regmatch_t pmatch[], test_bstr_t *test) {
     int ret = 0;
     if (use_posix_version) {
         assert(strlen(string)==len);
-       ret = regexec(preg, string, nmatch, pmatch, eflags);
+        ret = regexec(preg, string, nmatch, pmatch, test->eflags);
     } else {
         struct re_registers regs;
-        if (eflags&REG_NOTBOL) preg->not_bol = 1;
-        if (eflags&REG_NOTEOL) preg->not_eol = 1;
-        int so = re_search(preg, string, len, 0, len, &regs);
+        re_set_registers(preg, &regs, nmatch, malloc(nmatch*sizeof(regoff_t)), malloc(nmatch*sizeof(regoff_t)));
+        int start = 0;
+        int range = len;
+        //re_serchにはeflagsが存在しないので自力で設定する。
+        if (test->eflags&REG_NOTBOL) preg->not_bol = 1;
+        if (test->eflags&REG_NOTEOL) preg->not_eol = 1;
+        if (test->eflags&REG_STARTEND) {
+            start = test->start;
+            range = test->end - start;
+        }
+        int so = re_search(preg, string, len, start, range, &regs);
         if (so>=0) {
+            //regsをpmatchに変換する。
             for (int i=0; i<nmatch; i++) {
                 pmatch[i].rm_so = regs.start[i];
                 pmatch[i].rm_eo = regs.end[i];
             }
         } else ret = 1;
+        free(regs.start);
+        free(regs.end);
     }
     return ret;
 }
