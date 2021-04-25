@@ -23,7 +23,6 @@
 //              | "lower"       #[a-z]                                      POSIX
 //              | "alpha"       #[A-Za-z]                                   POSIX
 //              | "alnum"       #[A-Za-z0-9]                                POSIX
-//              | "word"        #[A-Za-z0-9_]
 //              | "digit"       #[0-9]                                      POSIX
 //              | "xdigit"      #[0-9A-Fa-f]                                POSIX
 //              | "punct"       #[]!"#$%&'()*+,-./:;<=>?@[\^_`{|}~-]        POSIX
@@ -98,6 +97,10 @@
 /* If this bit is set, then an unmatched ) is ordinary.
    If not set, then an unmatched ) is invalid.  */
 //# define RE_UNMATCHED_RIGHT_PAREN_ORD (RE_NO_EMPTY_RANGES << 1)
+
+/* If this bit is set, do not process the GNU regex operators.
+   If not set, then the GNU regex operators are recognized. */
+//# define RE_NO_GNU_OPS (RE_NO_POSIX_BACKTRACKING << 1)
 
 /* If this bit is set, then ignore case when matching.
    If not set, then case is significant.  */
@@ -232,6 +235,10 @@ static reg_stat_t repeat_exp  (reg_compile_t *preg_compile);
 static reg_stat_t primary_exp (reg_compile_t *preg_compile);
 static reg_stat_t new_repeat  (reg_compile_t *preg_compile);
 static reg_stat_t new_char_set(reg_compile_t *preg_compile);
+static reg_stat_t new_char_set_ext(reg_compile_t *preg_compile);
+static void set_alpha(char_set_t *char_set);
+static void set_alnum(char_set_t *char_set);
+static void set_punct(char_set_t *char_set);
 static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_set);
 static reg_stat_t new_subreg  (reg_compile_t *preg_compile);
 
@@ -533,9 +540,14 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
         } else if (token_is_vbar(preg_compile->p)) {
             return REG_END;
         } else if (token1_is(preg_compile->p, '\\') /*&& strchr(SPECIAL_CHARS, p[1])*/) {
-            pat = new_pattern(PAT_CHAR);
-            pat->c = preg_compile->p[1];
             preg_compile->p++;
+            if (!(reg_syntax&RE_NO_GNU_OPS) &&
+                    (token1_is(preg_compile->p, 'w') || token1_is(preg_compile->p, 'W') ||
+                     token1_is(preg_compile->p, 's') || token1_is(preg_compile->p, 'S'))) {
+                return new_char_set_ext(preg_compile);
+            }
+            pat = new_pattern(PAT_CHAR);
+            pat->c = *preg_compile->p;
         } else if (token1_is(preg_compile->p, '[')) {
             return new_char_set(preg_compile);
         } else if (token1_is(preg_compile->p, '$') &&
@@ -720,6 +732,39 @@ static reg_stat_t new_char_set(reg_compile_t *preg_compile) {
     return REG_OK;
 }
 
+static reg_stat_t new_char_set_ext(reg_compile_t *preg_compile) {
+    pattern_t *pat = new_pattern(PAT_CHARSET);
+    char_set_t *char_set;
+    pat->cset = char_set = calloc(1, sizeof(char_set_t));;
+
+    switch (*preg_compile->p++) {
+    case 'w':           //[_[:alnum:]]
+        push_char_set(char_set, '_');
+        set_alnum(char_set);
+        break;
+    case 'W':           //[^\[:alnum:]]
+        char_set->reverse = 1;
+        memset(char_set->chars, 1, sizeof(char_set->chars)*sizeof(char_set->chars[0]));
+        push_char_set(char_set, '_');
+        set_alnum(char_set);
+        char_set->reverse = 0;
+        break;
+    case 's':           //[[:space:]]
+        push_char_set_str(char_set, " \t\n\r\f\v");
+        break;
+    case 'S':           //[^[:space:]]
+        char_set->reverse = 1;
+        memset(char_set->chars, 1, sizeof(char_set->chars)*sizeof(char_set->chars[0]));
+        push_char_set_str(char_set, " \t\n\r\f\v");
+        char_set->reverse = 0;
+        break;
+    default:
+        return REG_ERR;
+    }
+    push_pattern(preg_compile, pat);
+    return REG_OK;
+}
+
 static void set_alpha(char_set_t *char_set) {
     for (int c='A'; c<='Z'; c++) push_char_set(char_set, c);
     for (int c='a'; c<='z'; c++) push_char_set(char_set, c);
@@ -736,7 +781,6 @@ static void set_punct(char_set_t *char_set) {
 //              | "lower"       #[a-z]                                      POSIX
 //              | "alpha"       #[A-Za-z]                                   POSIX
 //              | "alnum"       #[A-Za-z0-9]                                POSIX
-//              | "word"        #[A-Za-z0-9_]
 //              | "digit"       #[0-9]                                      POSIX
 //              | "xdigit"      #[0-9A-Fa-f]                                POSIX
 //              | "punct"       #[]!"#$%&'()*+,./:;<=>?@[\^_`{|}~-]         POSIX
@@ -761,10 +805,6 @@ static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_s
     } else if (strncmp(regexp, "alnum", 5)==0) {
         set_alnum(char_set);
         regexp += 5;
-    } else if (strncmp(regexp, "word", 4)==0) {             //alnum + '_'
-        set_alnum(char_set);
-        push_char_set(char_set, '_');
-        regexp += 4;
     } else if (strncmp(regexp, "digit", 5)==0) {
         for (int c='0'; c<='9'; c++) push_char_set(char_set, c);
         regexp += 5;
@@ -808,6 +848,7 @@ static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_s
     preg_compile->p = regexp;
     return REG_OK;
 }
+
 
 //--------------------------------------------------------------------------------
 

@@ -276,11 +276,15 @@
     {__LINE__, {"abcXYZ123_"},  {"[[:alpha:]]*"},   {{"abcXYZ"}},           1, 0, REG_BRE_ERE},
     {__LINE__, {"abcXYZ123_"},  {"[[:alnum:]]*"},   {{"abcXYZ123"}},        1, 0, REG_BRE_ERE},
     {__LINE__, {"<>[]_ aX1"},   { "[^[:alnum:]]*"}, {{"<>[]_ "}},           1, 0, REG_BRE_ERE},
-//  {__LINE__, {"abcXYZ123_"},  {"[[:word:]]*"},    {{"abcXYZ123_"}},       1, 0, REG_BRE_ERE}, //非POSIX
+    {__LINE__, {"abcXYZ123_"},  {"\\w*"},           {{"abcXYZ123_"}},       1, 0, REG_BRE_ERE}, //GNU
+    {__LINE__, {"!$abc"},       {"\\W*"},           {{"!$"}},               1, 0, REG_BRE_ERE}, //GNU
     {__LINE__, {"x123ABCdefx"}, {"x[[:digit:]]*"},  {{"x123"}},             1, 0, REG_BRE_ERE},
     {__LINE__, {"x123ABCdefx"}, {"x[[:xdigit:]]*"}, {{"x123ABCdef"}},       1, 0, REG_BRE_ERE},
     {__LINE__, {"[:-+a]"},      {"[[:punct:]]*"},   {{"[:-+"}},             1, 0, REG_BRE_ERE},
     {__LINE__, {" \tz"},        {"[[:blank:]]*"},   {{" \t"}},              1, 0, REG_BRE_ERE},
+    {__LINE__, {" \t\n\r\f\vz"},{"[[:space:]]*"},   {{" \t\n\r\f\v"}},      1, 0, REG_BRE_ERE},
+    {__LINE__, {" \t\n\r\f\vz"},{"\\s*"},           {{" \t\n\r\f\v"}},      1, 0, REG_BRE_ERE}, //GNU
+    {__LINE__, {"abc123 "},     {"\\S*"},           {{"abc123"}},           1, 0, REG_BRE_ERE}, //GNU
     {__LINE__, {"\01\177"},     {"[[:cntrl:]]*"},   {{"\01\177"}},          1, 0, REG_BRE_ERE},
     {__LINE__, {"abc \t"},      {"[[:graph:]]*"},   {{"abc"}},              1, 0, REG_BRE_ERE},
     {__LINE__, {"abc \t"},      {"[[:print:]]*"},   {{"abc "}},             1, 0, REG_BRE_ERE},
