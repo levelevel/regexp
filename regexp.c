@@ -201,8 +201,6 @@ typedef struct regcomp {
     array_t *array;         //pattern_t*のアレイ
     unsigned int match_here :1;     //現在位置からマッチさせる
     unsigned int newline_anchor:1;  //\nをアンカーとする（^/$にマッチする）
-    unsigned int match_newline:1;   //このパターンで改行が^にマッチした（検索時の作業用）
-    unsigned int submatch_newline:1;//サブパターンで改行が^にマッチした（検索時の作業用）
     short nparen;           //()の数（0-9）
     short ref_num;          //SUBREGの場合の後方参照の番号（0-9）
     int backref_list;       //(1 << n)ビットが1なら\nによる後方参照対象がこのsubreg内に存在する
@@ -816,12 +814,11 @@ static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_s
 #define text_is_end(p) ((p)>=g_text_end)
 //検索時の作業用
 static const char* g_text_org;  //オリジナル検索文字列
-static const char *g_text;      //検索文字列の先頭
+static const char *g_text_start;//検索文字列の先頭
 static const char *g_text_end;  //検索文字列の末尾の次の位置（文字列の終了判定に用いる）
-static const char *g_text_bol;  //パターン一致の開始位置（^にマッチさせる位置。\nの影響を受ける）
 static int g_newline_anchor;    //\nをアンカーとする（^/$にマッチする）
 static size_t      g_nmatch;    //pmatchの要素数
-static regmatch_t *g_pmatch;    //マッチング位置
+static regmatch_t *g_pmatch;    //マッチング位置を格納する配列
 static int         g_eflags;
 
 // reg_exec: search for compiled regexp anywhere in text
@@ -831,16 +828,15 @@ int reg_exec(reg_compile_t *preg_compile, const char *text, size_t len, size_t n
     if (len<0) len = strlen(text);  //lenが負の値の場合はtextをnul終端の文字列とみなす
     g_text_org = text;
     if ((eflags&REG_STARTEND) && pmatch) {
-        g_text     = text + pmatch[0].rm_so;
-        g_text_end = text + pmatch[0].rm_eo;
+        g_text_start = text + pmatch[0].rm_so;
+        g_text_end   = text + pmatch[0].rm_eo;
     } else {
-        g_text     = text;
-        g_text_end = text + len;
+        g_text_start = text;
+        g_text_end   = text + len;
     }
     reg_syntax = preg_compile->syntax;
     g_newline_anchor = preg_compile->newline_anchor;
     preg_compile->eflags = g_eflags = eflags;
-    preg_compile->match_newline = 0;
     if (pmatch) {
         pmatch[0].rm_so = 0;
         pmatch[0].rm_eo = 0;
@@ -855,7 +851,7 @@ int reg_exec(reg_compile_t *preg_compile, const char *text, size_t len, size_t n
         g_pmatch = NULL;
     }
     int match_len;
-    return reg_exec_main(preg_compile, g_text, &match_len);
+    return reg_exec_main(preg_compile, g_text_start, &match_len);
 }
 // reg_exec_main: search for compiled regexp anywhere in text
 //成功した場合は0、失敗した場合は0以外を返す。
@@ -866,7 +862,6 @@ static int reg_exec_main(reg_compile_t *preg_compile, const char *text, int *mat
     pattern_t **pat = (pattern_t**)preg_compile->array->buckets;
 
     do {    /* must look even if string is empty */
-        g_text_bol = text;
         if (reg_match_here(preg_compile, pat, text, &rm_ep)) {
             set_match(preg_compile, text, rm_ep);
             *match_len = rm_ep - text;
@@ -883,17 +878,13 @@ static int reg_exec_main(reg_compile_t *preg_compile, const char *text, int *mat
 }
 
 //マッチング位置のインデックスを記録し、マッチした文字列の長さを返す。
+//マッチング位置の基準はg_text_startではなくg_text_org
 static int set_match(reg_compile_t *preg_compile, const char *rm_sp, const char *rm_ep) {
     int so = rm_sp - g_text_org;
     int eo = rm_ep - g_text_org;
     int match_len = eo - so;
     int idx = preg_compile->ref_num;
-    if (g_pmatch && idx>=0) {
-        //\nに^がマッチした場合は開始位置を\nの次の位置に調整する。
-        if (preg_compile->match_newline || preg_compile->submatch_newline) {
-            assert(g_text_org[so]=='\n');
-            so++;
-        }
+    if (g_pmatch && idx>=0) {   //idx(ref_num)が-1の場合は記録しない
         g_pmatch[idx].rm_so = so;
         g_pmatch[idx].rm_eo = eo;
     }
@@ -919,31 +910,31 @@ static int reg_match_here(reg_compile_t *preg_compile, pattern_t **pat, const ch
 }
 
 // reg_match_pat: 1個のパターンがマッチするかを判定
+// match_lenにはpatでマッチしたtextの長さを設定する。
 static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char *text, int *match_len) {
-    *match_len = 1;   //patにマッチしたtextの長さ
     switch (pat->type) {
     case PAT_CHAR:
+        *match_len = 1;
         return pat->c == ((reg_syntax&RE_ICASE)?toupper(*text):*text);
     case PAT_CHARSET:
         if (text_is_end(text)) return 0;
         if (*text == '\n' && pat->cset->reverse && reg_syntax&RE_HAT_LISTS_NOT_NEWLINE) return 0;
+        *match_len = 1;
         return pat->cset->chars[(reg_syntax&RE_ICASE)?toupper(*text):*text];
     case PAT_DOT:
         if (!(reg_syntax&RE_DOT_NEWLINE) && *text=='\n') return 0;
         if ((reg_syntax&RE_DOT_NOT_NULL) && *text=='\0') return 0;
+        *match_len = 1;
         return !text_is_end(text);
     case PAT_SUBREG:
-        if (reg_exec_main(pat->regcomp, text, match_len)==0) {
-            preg_compile->submatch_newline = (pat->regcomp->match_newline || pat->regcomp->submatch_newline);
-            return 1;
-        }
+        if (reg_exec_main(pat->regcomp, text, match_len)==0) return 1;
         return 0;
     case PAT_BACKREF:
     {
         assert(pat->ref_num<g_nmatch);
         regmatch_t *regmat = g_pmatch + pat->ref_num;
         if (regmat->rm_so < 0) return 0;
-        const char *substr = g_text + regmat->rm_so;
+        const char *substr = g_text_start + regmat->rm_so;
         int sublen = regmat->rm_eo - regmat->rm_so;
         assert(sublen>=0);
         if (strncmp(text, substr, sublen)==0) {
@@ -957,10 +948,7 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
         int num = num_array(pat->or_array);
         for (int i=0; i<num; i++) {
             reg_compile_t *subreg = peek_array(pat->or_array, i);
-            if (reg_exec_main(subreg, text, match_len)==0) {
-                preg_compile->submatch_newline = (subreg->match_newline || subreg->submatch_newline);
-                return 1;
-            }
+            if (reg_exec_main(subreg, text, match_len)==0) return 1;
             for (int i=1; i<g_nmatch; i++) {
                 if (preg_compile->backref_list&(1 << i)) {
                     g_pmatch[i].rm_so = -1;
@@ -971,24 +959,16 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
         return 0;
     }
     case PAT_CARET:
-        if (g_newline_anchor && g_text_bol==text && *text=='\n') {
-            preg_compile->match_newline = 1;
-            *match_len = 1;
-            return 1;
-        } else if (g_newline_anchor && g_text_bol<text && *(text-1)=='\n') {
-            *match_len = 0;
-            return 1;
-        } else if (!(g_eflags&REG_NOTBOL) && text==g_text) {
-            *match_len = 0;
+        if ((g_newline_anchor && g_text_start<text && *(text-1)=='\n') ||   //'\n'の次の空白文字にマッチ
+            (!(g_eflags&REG_NOTBOL) && text==g_text_start)) {               //textの先頭にマッチ
+            *match_len = 0; //長さ0にマッチ
             return 1;
         }
         return 0;
     case PAT_DOLLAR:
-        if (!(g_eflags&REG_NOTEOL) && text_is_end(text)) {
-            *match_len = 0;
-            return 1;
-        } else if (g_newline_anchor && *text=='\n') {
-            *match_len = 0;
+        if ((!(g_eflags&REG_NOTEOL) && text_is_end(text)) ||                //textの最後にマッチ
+            (g_newline_anchor && *text=='\n')) {                            //'\n'の前の空白文字にマッチ
+            *match_len = 0; //長さ0にマッチ
             return 1;
         }
         return 0;
@@ -1003,13 +983,15 @@ static int reg_match_repeat(reg_compile_t *preg_compile, pattern_t **pat, const 
     pattern_t *rep = pat[0];
     pattern_t *c   = pat[1];
     assert(rep->type==PAT_REPEAT);
-    int cnt = 0;
+    int cnt = 0;    //繰り返しマッチ回数
     int ret = 0;
-    int len;
+    int match_len;
 
     do {    /* a \{0,n\} matches zero or more instances */
         if (cnt++>=rep->min && reg_match_here(preg_compile, pat+2, text, rm_ep)) ret = 1;   //最短一致ならここでreturn 1する
-    } while (reg_match_pat(preg_compile, c, text, &len) && (text+=len) && cnt<=rep->max);
+    } while (reg_match_pat(preg_compile, c, text, &match_len) &&
+             (text+=match_len) &&   //マッチした文字だけtextを進めて次の処理を行う
+              cnt<=rep->max);
 
     return ret;
 }
