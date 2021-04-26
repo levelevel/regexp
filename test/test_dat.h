@@ -373,4 +373,24 @@
     {__LINE__, {"ab\0cd",5},    {"(b\0c)",5},       {{"b\0c",3},{"b\0c",3}},2, 0, REG_EXTENDED},
     {__LINE__, {"ab\0cd",5},    {"b(\0)c",5},       {{"b\0c",3},{"\0",1}},  2, 0, REG_EXTENDED},
     {__LINE__, {"\0\01a",3},    {"[[:cntrl:]]*",0}, {{"\0\01",2}},          1, 0, REG_BRE_ERE},
+
+//  Word
+    {__LINE__, {"scan can."},   {"\\<can"},         {{"can"}},              1, 0, REG_BRE_ERE},
+    {__LINE__, {"scan can."},   {"\\<scan"},        {{"scan"}},             1, 0, REG_BRE_ERE},
+    {__LINE__, {"12s _9"},      {"\\<12"},          {{"12"}},               1, 0, REG_BRE_ERE},
+    {__LINE__, {"12s _9"},      {"\\<_"},           {{"_"}},                1, 0, REG_BRE_ERE},
+    {__LINE__, {"begin end"},   {"\\<\\w{3}\\>"},   {{"end"}},              1, 0, REG_EXTENDED},
+    {__LINE__, {"begin end"},   {"\\b\\w{3}\\b"},   {{"end"}},              1, 0, REG_EXTENDED},
+    {__LINE__, {"canCan"},      {"\\Bcan"},         {{"Can"}},              1, 0, REG_BRE_ERE|REG_ICASE},
+    {__LINE__, {"canCan"},      {"can\\Bcan"},      {{"canCan"}},           1, 0, REG_BRE_ERE|REG_ICASE},
+
+    {__LINE__, {"A\ncan\nZ"} ,  {"\\<can\\>"},      {{"can"}},              1, 0, REG_BRE_ERE},
+    {__LINE__, {"A\nscan\nZ"} , {"\\<can\\>"},      {{""}},                 1, 1, REG_BRE_ERE},
+    {__LINE__, {"A\ncan\nZ"} ,  {"\\<(can)\\>"},    {{"can"},{"can"}},      2, 0, REG_EXTENDED},
+    {__LINE__, {"A\ncan\nZ"} ,  {"(\\<can\\>)"},    {{"can"},{"can"}},      2, 0, REG_EXTENDED},
+
+    {__LINE__, {"begin end"},   {"\\`\\w+"},        {{"begin"}},            1, 0, REG_EXTENDED},
+    {__LINE__, {"can Can"},     {"\\`Can"},         {{""}},                 1, 1, REG_BRE_ERE},
+    {__LINE__, {"can\nCan"},    {"\\`Can"},         {{""}},                 1, 1, REG_BRE_ERE},
+    {__LINE__, {"begin end"},   {"\\w+\\'"},        {{"end"}},              1, 0, REG_EXTENDED},
 //}

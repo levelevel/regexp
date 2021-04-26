@@ -14,8 +14,12 @@
 //              | "\(" reg_exp "\)"                                         BRE
 //              | "(" reg_exp ")"                                               ERE
 //              | "\" ( "1" | ... | "9" )                                   BRE/ERE
-//              = "^"                                                           ERE
-//              = "$"                                                           ERE
+//              | "^" | "$"                                                     ERE
+//              | "\w" | "\W"                                               GNU
+//              | "\s" | "\S"                                               GNU
+//              | "\<" | "\>"                                               GNU
+//              | "\b" | "\B"                                               GNU
+//              | "\`" | "\'"                                               GNU
 // char_set     = char char_set*                                            BRE/ERE
 //              | char "-" char
 //              | "[:" char_class ":]"
@@ -161,21 +165,29 @@
 
 //パターンタイプ
 typedef enum {
-    PAT_CHAR=1, // c
-    PAT_CHARSET,// [s] [^s]
-    PAT_DOT,    // .
-    PAT_REPEAT, // *, \{m,n\}
-    PAT_SUBREG, // \(r\)
-    PAT_BACKREF,// \1
-    PAT_OR,     // |
-    PAT_CARET,  // ^
-    PAT_DOLLAR, // $
-    PAT_NULL,   //パターン配列の終わり
+    PAT_CHAR=1,         // c
+    PAT_CHARSET,        // [s] [^s]
+    PAT_DOT,            // .
+    PAT_REPEAT,         // *, {m,n}
+    PAT_SUBREG,         // ()
+    PAT_BACKREF,        // \1
+    PAT_OR,             // |
+    PAT_CARET,          // ^
+    PAT_DOLLAR,         // $
+    PAT_WORD_FIRST,     // \<
+    PAT_WORD_LAST,      // \>
+    PAT_WORD_DELIM,     // \b
+    PAT_NOT_WORD_DELIM, // \B
+    PAT_TEXT_FIRST,     // \`
+    PAT_TEXT_LAST,      // \'
+    PAT_NULL,           //パターン配列の終わり
 } pattern_type_t;
 
 static const char *pattern_type_str[] = {
     "0", "PAT_CHAR", "PAT_CHARSET", "PAT_DOT", "PAT_REPEAT",
-    "PAT_SUBREG", "PAT_BACKREF", "PAT_OR", "PAT_CARET", "PAT_DOLLAR", "PAT_NULL"
+    "PAT_SUBREG", "PAT_BACKREF", "PAT_OR", "PAT_CARET", "PAT_DOLLAR",
+    "WORD_FIRST", "WORD_LAST", "WORD_DELIM", "NOT_WORD_DELIM", "TEXT_FIRTS", "TEXT_LAST",
+    "PAT_NULL"
 };
 
 //[s], [^s]を格納する文字セット
@@ -500,8 +512,13 @@ static reg_stat_t repeat_exp(reg_compile_t *preg_compile) {
 //              | "\(" reg_exp "\)"                                         BRE
 //              | "(" reg_exp ")"                                               ERE
 //              | "\" ( "1" | ... | "9" )                                   BRE
-//              = "^"                                                           ERE
-//              = "$"                                                           ERE
+//              | "^"                                                           ERE
+//              | "$"                                                           ERE
+//              | "\w" | "\W"                                               GNU
+//              | "\s" | "\S"                                               GNU
+//              | "\<" | "\>"                                               GNU
+//              | "\b" | "\B"                                               GNU
+//              | "\`" | "\'"                                               GNU
 static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
     pattern_t *pat = NULL;
     int cont_flag;
@@ -542,12 +559,25 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
         } else if (token1_is(preg_compile->p, '\\') /*&& strchr(SPECIAL_CHARS, p[1])*/) {
             preg_compile->p++;
             if (!(reg_syntax&RE_NO_GNU_OPS) &&
-                    (token1_is(preg_compile->p, 'w') || token1_is(preg_compile->p, 'W') ||
-                     token1_is(preg_compile->p, 's') || token1_is(preg_compile->p, 'S'))) {
+                (token1_is(preg_compile->p, 'w') || token1_is(preg_compile->p, 'W') ||
+                 token1_is(preg_compile->p, 's') || token1_is(preg_compile->p, 'S'))) {
                 return new_char_set_ext(preg_compile);
+            } else if (!(reg_syntax&RE_NO_GNU_OPS) && token1_is(preg_compile->p, '<')) {
+                pat = new_pattern(PAT_WORD_FIRST);
+            } else if (!(reg_syntax&RE_NO_GNU_OPS) && token1_is(preg_compile->p, '>')) {
+                pat = new_pattern(PAT_WORD_LAST);
+            } else if (!(reg_syntax&RE_NO_GNU_OPS) && token1_is(preg_compile->p, 'b')) {
+                pat = new_pattern(PAT_WORD_DELIM);
+            } else if (!(reg_syntax&RE_NO_GNU_OPS) && token1_is(preg_compile->p, 'B')) {
+                pat = new_pattern(PAT_NOT_WORD_DELIM);
+            } else if (!(reg_syntax&RE_NO_GNU_OPS) && token1_is(preg_compile->p, '`')) {
+                pat = new_pattern(PAT_TEXT_FIRST);
+            } else if (!(reg_syntax&RE_NO_GNU_OPS) && token1_is(preg_compile->p, '\'')) {
+                pat = new_pattern(PAT_TEXT_LAST);
+            } else {
+                pat = new_pattern(PAT_CHAR);
+                pat->c = *preg_compile->p;
             }
-            pat = new_pattern(PAT_CHAR);
-            pat->c = *preg_compile->p;
         } else if (token1_is(preg_compile->p, '[')) {
             return new_char_set(preg_compile);
         } else if (token1_is(preg_compile->p, '$') &&
@@ -852,7 +882,11 @@ static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_s
 
 //--------------------------------------------------------------------------------
 
-#define text_is_end(p) ((p)>=g_text_end)
+//textバッファの文字を検査するマクロ
+#define text_is_start(p)    ((p)==g_text_start)             //pがtextの先頭にマッチする
+#define text_is_end(p)      ((p)>=g_text_end)               //pがtextの最後にマッチする
+#define text_is_word(p)     (isalnum(*(p))||*(p)=='_')      //*pが単語を構成する文字(alnum+'_')である
+
 //検索時の作業用
 static const char* g_text_org;  //オリジナル検索文字列
 static const char *g_text_start;//検索文字列の先頭
@@ -1000,8 +1034,8 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
         return 0;
     }
     case PAT_CARET:
-        if ((g_newline_anchor && g_text_start<text && *(text-1)=='\n') ||   //'\n'の次の空白文字にマッチ
-            (!(g_eflags&REG_NOTBOL) && text==g_text_start)) {               //textの先頭にマッチ
+        if ((!(g_eflags&REG_NOTBOL) && text_is_start(text)) ||              //textの先頭にマッチ
+            (g_newline_anchor && !text_is_start(text) && *(text-1)=='\n')) {//'\n'の次の空白文字にマッチ
             *match_len = 0; //長さ0にマッチ
             return 1;
         }
@@ -1010,6 +1044,44 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
         if ((!(g_eflags&REG_NOTEOL) && text_is_end(text)) ||                //textの最後にマッチ
             (g_newline_anchor && *text=='\n')) {                            //'\n'の前の空白文字にマッチ
             *match_len = 0; //長さ0にマッチ
+            return 1;
+        }
+        return 0;
+    case PAT_TEXT_FIRST:         //"\`"
+        if (text_is_start(text)) {      //textの先頭にマッチするが'\n'にはマッチしない
+            *match_len = 0;
+            return 1;
+        }
+        return 0;
+    case PAT_TEXT_LAST:          //"\'"
+        if (text_is_end(text)) {        //textの最後にマッチするが'\n'にはマッチしない
+            *match_len = 0;
+            return 1;
+        }
+        return 0;
+    case PAT_WORD_FIRST:        //"\<"
+        if (text_is_word(text) && (text_is_start(text) || !text_is_word(text-1))) {
+            *match_len = 0;
+            return 1;
+        }
+        return 0;
+    case PAT_WORD_LAST:         //"\>"
+        if (!text_is_word(text) && (text_is_end(text) || text_is_word(text-1))) {
+            *match_len = 0;
+            return 1;
+        }
+        return 0;
+    case PAT_WORD_DELIM:        //"\b"
+        if ((text_is_word(text) && (text_is_start(text) || !text_is_word(text-1))) ||
+            (!text_is_word(text) && (text_is_end(text) || text_is_word(text-1)))) {
+            *match_len = 0;
+            return 1;
+        }
+        return 0;
+    case PAT_NOT_WORD_DELIM:    //"\B"
+        if ((text_is_word(text) && !(text_is_start(text) || !text_is_word(text-1))) ||
+            (!text_is_word(text) && !(text_is_end(text) || text_is_word(text-1)))) {
+            *match_len = 0;
             return 1;
         }
         return 0;
@@ -1076,12 +1148,13 @@ static void reg_pattern_free(pattern_t *pat) {
     free(pat);
 }
 
+//定数とそのシンボル名のテーブル
 typedef struct {
     int num;
     const char *name;
 } name_tbl_t;
-#define REG_TBL(s) {REG_##s, #s}
-#define RE_TBL(s) {RE_##s, #s}
+#define REG_TBL(s)  {REG_##s, #s}   //REG_TBL(EXTENDED) -> {REG_EXTENDED, "REG_EXTENDED"}
+#define RE_TBL(s)   {RE_##s, #s}
 static name_tbl_t cflags_tbl[] = {
     REG_TBL(EXTENDED),
     REG_TBL(ICASE),
@@ -1104,6 +1177,7 @@ static name_tbl_t syntax_tbl[] = {
     RE_TBL(NO_BK_PARENS),
     RE_TBL(NO_BK_VBAR),
     RE_TBL(UNMATCHED_RIGHT_PAREN_ORD),
+    RE_TBL(NO_GNU_OPS),
     RE_TBL(ICASE),
 };
 static const char* reg_flag2str(int flags, name_tbl_t *tbl, size_t size, char buf[]) {
