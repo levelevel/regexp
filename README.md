@@ -74,11 +74,13 @@ GNU regex(POSIX)相当の基本正規表現(BRE)と拡張正規表現(ERE)をサ
 
 ## TODO
 
+- UTF-8対応
 - PCRE
 - パターン中の複数文字の連続を文字列単位の処理に変換すると検索効率が上がりそう。
 
 ## 参考資料
 
 - [A Regular Expression Matcher, Code by Rob Pike](https://www.cs.princeton.edu/courses/archive/spr09/cos333/beautiful.html)
-- [正規表現-Wikipedis](https://ja.wikipedia.org/wiki/%E6%AD%A3%E8%A6%8F%E8%A1%A8%E7%8F%BE)
+- [正規表現 : Wikipedia](https://ja.wikipedia.org/wiki/%E6%AD%A3%E8%A6%8F%E8%A1%A8%E7%8F%BE)
+- [UTF-8 : Wikipedia](https://ja.wikipedia.org/wiki/UTF-8)
 - [Man page of REGEX](https://linuxjm.osdn.jp/html/LDP_man-pages/man3/regex.3.html)

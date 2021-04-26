@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include "locale.h"
 
 #define __USE_GNU
 #include <regex.h>
@@ -221,6 +222,8 @@ static int test_misc(void) {
 }
 
 int main(void) {
+    setlocale(LC_ALL, "");          //環境変数に沿ってロケールを設定する
+    setlocale(LC_MESSAGES, "C");    //メッセージは英語とする
     int cnt = 0;
     cnt += test_bstr();
     cnt += test_misc();

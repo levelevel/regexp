@@ -293,7 +293,7 @@
     {__LINE__, {"abc"},         {"[[:alpha]]*"},    {{""}},                 1,-1, REG_BRE_ERE},
     {__LINE__, {"abc"},         {"[[:alpha:]"},     {{""}},                 1,-1, REG_BRE_ERE},
     {__LINE__, {"abc"},         {"[[:alpha:]-z]"},  {{""}},                 1,-1, REG_BRE_ERE},
-    {__LINE__, {"a\377c"},      {"[^[:alpha:]]"},   {{"\377"}},             1, 0, REG_BRE_ERE},
+    {__LINE__, {"a\177c"},      {"[^[:alpha:]]"},   {{"\177"}},             1, 0, REG_BRE_ERE},
 
 //  REG_ICASE
     {__LINE__, {"aBc"},         {"aBc"},            {{"aBc"}},              1, 0, REG_BRE_ERE|REG_ICASE},
@@ -393,4 +393,14 @@
     {__LINE__, {"can Can"},     {"\\`Can"},         {{""}},                 1, 1, REG_BRE_ERE},
     {__LINE__, {"can\nCan"},    {"\\`Can"},         {{""}},                 1, 1, REG_BRE_ERE},
     {__LINE__, {"begin end"},   {"\\w+\\'"},        {{"end"}},              1, 0, REG_EXTENDED},
+
+//  UTF-8
+    {__LINE__, {"あいう"},      {"あ"},             {{"あ"}},               1, 0, REG_EXTENDED},
+    {__LINE__, {"ああう"},      {"あ*"},            {{"ああ"}},             1, 0, REG_EXTENDED},
+    {__LINE__, {"ああう"},      {"(あ)*"},          {{"ああ"}},             1, 0, REG_EXTENDED},
+    {__LINE__, {"あいう"},      {"^あ"},            {{"あ"}},               1, 0, REG_EXTENDED},
+    {__LINE__, {"あいあ"},      {"あ$"},            {{"あ"}},               1, 0, REG_EXTENDED},
+    {__LINE__, {"あいう"},      {"(あ|い)*"},       {{"あい"}},             1, 0, REG_EXTENDED},
+//  {__LINE__, {"あいう"},      {"[あい]*"},        {{"あい"}},             1, 0, REG_EXTENDED},
+//  {__LINE__, {"a1α１一あ"},   {"[[:alnum:]]*"},  {{"a1α１一"}},          1, 0, REG_EXTENDED},
 //}

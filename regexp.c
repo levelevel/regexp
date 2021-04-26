@@ -161,11 +161,10 @@
 #define __USE_GNU
 #include "regexp.h"
 
-#define SPECIAL_CHARS "\\^$.[*"  //バックスラッシュでエスケープできる文字
-
 //パターンタイプ
 typedef enum {
-    PAT_CHAR=1,         // c
+    PAT_CHAR=1,         // 1バイト文字(ASCII)
+    PAT_MBCHAR,         // マルチバイト文字(UTF-8)
     PAT_CHARSET,        // [s] [^s]
     PAT_DOT,            // .
     PAT_REPEAT,         // *, {m,n}
@@ -184,7 +183,7 @@ typedef enum {
 } pattern_type_t;
 
 static const char *pattern_type_str[] = {
-    "0", "PAT_CHAR", "PAT_CHARSET", "PAT_DOT", "PAT_REPEAT",
+    "0", "PAT_CHAR", "PAT_MBCHAR", "PAT_CHARSET", "PAT_DOT", "PAT_REPEAT",
     "PAT_SUBREG", "PAT_BACKREF", "PAT_OR", "PAT_CARET", "PAT_DOLLAR",
     "WORD_FIRST", "WORD_LAST", "WORD_DELIM", "NOT_WORD_DELIM", "TEXT_FIRTS", "TEXT_LAST",
     "PAT_NULL"
@@ -192,8 +191,10 @@ static const char *pattern_type_str[] = {
 
 //[s], [^s]を格納する文字セット
 typedef struct {
-    char reverse;       //否定 [^...]
-    char chars[256];    //0:指定あり、1:指定あり
+    char reverse;           //否定 [^...]
+    char use_char_map;      //charsに256バイトのマップを使用する。0の場合はcharsに文字を列挙する。
+    char *chars;            //ASCIIのみ、0:指定あり、1:指定あり
+    int len;
 } char_set_t;
 
 //パターン
@@ -201,6 +202,10 @@ typedef struct {
     pattern_type_t  type;
     union {
         char        c;      //type=PAT_CHAR
+        struct {
+            char mbc[4];    //type==PAT_MBCHAR
+            int mbclen;
+        };
         char_set_t *cset;   //type=PAT_CHARSET
         struct {
             int min, max;   //type=PAT_REPEAT
@@ -556,7 +561,7 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
             }
         } else if (token_is_vbar(preg_compile->p)) {
             return REG_END;
-        } else if (token1_is(preg_compile->p, '\\') /*&& strchr(SPECIAL_CHARS, p[1])*/) {
+        } else if (token1_is(preg_compile->p, '\\')) {
             preg_compile->p++;
             if (!(reg_syntax&RE_NO_GNU_OPS) &&
                 (token1_is(preg_compile->p, 'w') || token1_is(preg_compile->p, 'W') ||
@@ -591,10 +596,18 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
             pat = new_pattern(PAT_CARET);
             cont_flag = 1;
         } else {
-            L_CHAR:
-            pat = new_pattern(PAT_CHAR);
-            char c = preg_compile->p[0];
-            pat->c = (reg_syntax&RE_ICASE)?toupper(c):c;
+            L_CHAR:;
+            int mbclen = mblen(preg_compile->p, MB_CUR_MAX);
+            if (mbclen>1) {
+                pat = new_pattern(PAT_MBCHAR);
+                memcpy(pat->mbc, preg_compile->p, mbclen);
+                pat->mbclen = mbclen;
+                preg_compile->p += mbclen-1;
+            } else {
+                pat = new_pattern(PAT_CHAR);
+                char c = preg_compile->p[0];
+                pat->c = (reg_syntax&RE_ICASE)?toupper(c):c;
+            }
         }
         if (pat) {
             push_pattern(preg_compile, pat);
@@ -702,7 +715,9 @@ static reg_stat_t new_char_set(reg_compile_t *preg_compile) {
     const char *regexp = preg_compile->p;
     assert(token1_is(regexp, '['));
     char_set_t *char_set;
-    pat->cset = char_set = calloc(1, sizeof(char_set_t));;
+    pat->cset = char_set = calloc(1, sizeof(char_set_t));
+    char_set->use_char_map = 1;
+    char_set->chars = calloc(256, 1);
     int bracket_is_closed = 0;  //']'が出現済み
     int accept_minus = 0;       //次の文字で範囲指定の'-'が利用できる
 
@@ -714,7 +729,7 @@ static reg_stat_t new_char_set(reg_compile_t *preg_compile) {
             return REG_ERR;
         }
         char_set->reverse = 1;
-        memset(char_set->chars, 1, sizeof(char_set->chars)*sizeof(char_set->chars[0]));
+        memset(char_set->chars, 1, 256);
         regexp++;
     }
     if (token1_is(regexp, ']') || token1_is(regexp, '-')) {
@@ -766,6 +781,8 @@ static reg_stat_t new_char_set_ext(reg_compile_t *preg_compile) {
     pattern_t *pat = new_pattern(PAT_CHARSET);
     char_set_t *char_set;
     pat->cset = char_set = calloc(1, sizeof(char_set_t));;
+    char_set->use_char_map = 1;
+    char_set->chars = calloc(256, 1);
 
     switch (*preg_compile->p++) {
     case 'w':           //[_[:alnum:]]
@@ -774,7 +791,7 @@ static reg_stat_t new_char_set_ext(reg_compile_t *preg_compile) {
         break;
     case 'W':           //[^\[:alnum:]]
         char_set->reverse = 1;
-        memset(char_set->chars, 1, sizeof(char_set->chars)*sizeof(char_set->chars[0]));
+        memset(char_set->chars, 1, 256);
         push_char_set(char_set, '_');
         set_alnum(char_set);
         char_set->reverse = 0;
@@ -784,7 +801,7 @@ static reg_stat_t new_char_set_ext(reg_compile_t *preg_compile) {
         break;
     case 'S':           //[^[:space:]]
         char_set->reverse = 1;
-        memset(char_set->chars, 1, sizeof(char_set->chars)*sizeof(char_set->chars[0]));
+        memset(char_set->chars, 1, 256);
         push_char_set_str(char_set, " \t\n\r\f\v");
         char_set->reverse = 0;
         break;
@@ -991,6 +1008,9 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
     case PAT_CHAR:
         *match_len = 1;
         return pat->c == ((reg_syntax&RE_ICASE)?toupper(*text):*text);
+    case PAT_MBCHAR:
+        *match_len = pat->mbclen;
+        return memcmp(text, pat->mbc, pat->mbclen)==0;
     case PAT_CHARSET:
         if (text_is_end(text)) return 0;
         if (*text == '\n' && pat->cset->reverse && reg_syntax&RE_HAT_LISTS_NOT_NEWLINE) return 0;
@@ -1125,6 +1145,7 @@ static void reg_pattern_free(pattern_t *pat) {
     if (pat==NULL) return;
     switch (pat->type) {
     case PAT_CHARSET:
+        free(pat->cset->chars);
         free(pat->cset);
         pat->cset = NULL;
         break;
@@ -1216,9 +1237,21 @@ void reg_print_str(FILE *fp, const char *bstr, int len) {
         case '\r': fputs("\\r", fp); break;
         case '\t': fputs("\\t", fp); break;
         case '\v': fputs("\\v", fp); break;
-        default:
-            if (iscntrl(*p) || *p>=0x80) fprintf(fp, "\\%03o", *p);
-            else fputc(*p, fp);
+        default:;
+            if (iscntrl(*p)) {
+                fprintf(fp, "\\%03o", *p);
+            } else if (*p<0x1f) {
+                fputc(*p, fp);
+            } else {
+                int mlen = mblen((const char*)p, MB_CUR_MAX);
+                if (mlen>0) {
+                    for (int j=0; j<mlen; j++) fputc(p[j], fp);
+                    i += mlen-1;
+                    p += mlen-1;
+                } else {
+                    fprintf(fp, "\\%03o", *p);
+                }
+            }
         }
     }
 }
@@ -1260,6 +1293,13 @@ void reg_dump(FILE *fp, reg_compile_t *preg_compile, int indent) {
             fprintf(fp, "'");
             reg_print_str(fp, &pat->c, 1);
             fprintf(fp, "'\n");
+            break;
+        }
+        case PAT_MBCHAR:
+        {
+            char buf[5] = {0};  //UTF-8 1文字分
+            memcpy(buf, pat->mbc, pat->mbclen);
+            fprintf(fp, "'%s'\n", pat->mbc);
             break;
         }
         case PAT_CHARSET:
