@@ -203,7 +203,7 @@ typedef struct {
     union {
         char        c;      //type=PAT_CHAR
         struct {
-            char mbc[4];    //type==PAT_MBCHAR
+            char mbc[4];    //type==PAT_MBCHAR、UTF-8で1文字分
             int mbclen;
         };
         char_set_t *cset;   //type=PAT_CHARSET
@@ -737,6 +737,7 @@ static reg_stat_t new_char_set(reg_compile_t *preg_compile) {
         regexp++;
         accept_minus = 1;
     }
+
     for (; !token_is_end(regexp); regexp++) {
         if (token1_is(regexp, '-') && !token_is_end(regexp+1) && !token1_is(regexp+1,']')) {
             if (!accept_minus || regexp[-1]>regexp[1]) {
@@ -903,6 +904,12 @@ static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_s
 #define text_is_start(p)    ((p)==g_text_start)             //pがtextの先頭にマッチする
 #define text_is_end(p)      ((p)>=g_text_end)               //pがtextの最後にマッチする
 #define text_is_word(p)     (isalnum(*(p))||*(p)=='_')      //*pが単語を構成する文字(alnum+'_')である
+#define text_is_word_first(p)   (!text_is_end((p)) && \
+                                 text_is_word((p)) && \
+                                 (text_is_start((p)) || !text_is_word((p)-1)))
+#define text_is_word_last(p)    (!text_is_start((p)) && \
+                                 (text_is_end((p)) || !text_is_word((p))) && \
+                                 text_is_word((p)-1))       //pが単語境界の先頭/最後
 
 //検索時の作業用
 static const char* g_text_org;  //オリジナル検索文字列
@@ -1006,9 +1013,11 @@ static int reg_match_here(reg_compile_t *preg_compile, pattern_t **pat, const ch
 static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char *text, int *match_len) {
     switch (pat->type) {
     case PAT_CHAR:
+        if (text_is_end(text)) return 0;
         *match_len = 1;
         return pat->c == ((reg_syntax&RE_ICASE)?toupper(*text):*text);
     case PAT_MBCHAR:
+        if (text_is_end(text)) return 0;
         *match_len = pat->mbclen;
         return memcmp(text, pat->mbc, pat->mbclen)==0;
     case PAT_CHARSET:
@@ -1017,15 +1026,19 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
         *match_len = 1;
         return pat->cset->chars[(reg_syntax&RE_ICASE)?toupper(*text):*text];
     case PAT_DOT:
+        if (text_is_end(text)) return 0;
         if (!(reg_syntax&RE_DOT_NEWLINE) && *text=='\n') return 0;
         if ((reg_syntax&RE_DOT_NOT_NULL) && *text=='\0') return 0;
-        *match_len = 1;
-        return !text_is_end(text);
+        *match_len = mblen(text, MB_CUR_MAX);
+        if (*match_len<0) return 0;
+        if (*match_len==0) *match_len = 1;  //'\0'にもマッチさせる
+        return 1;
     case PAT_SUBREG:
         if (reg_exec_main(pat->regcomp, text, match_len)==0) return 1;
         return 0;
     case PAT_BACKREF:
     {
+        if (text_is_end(text)) return 0;
         assert(pat->ref_num<g_nmatch);
         regmatch_t *regmat = g_pmatch + pat->ref_num;
         if (regmat->rm_so < 0) return 0;
@@ -1062,7 +1075,7 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
         return 0;
     case PAT_DOLLAR:
         if ((!(g_eflags&REG_NOTEOL) && text_is_end(text)) ||                //textの最後にマッチ
-            (g_newline_anchor && *text=='\n')) {                            //'\n'の前の空白文字にマッチ
+            (g_newline_anchor && !text_is_end(text) && *text=='\n')) {      //'\n'の前の空白文字にマッチ
             *match_len = 0; //長さ0にマッチ
             return 1;
         }
@@ -1080,27 +1093,25 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
         }
         return 0;
     case PAT_WORD_FIRST:        //"\<"
-        if (text_is_word(text) && (text_is_start(text) || !text_is_word(text-1))) {
+        if (text_is_word_first(text)) {
             *match_len = 0;
             return 1;
         }
         return 0;
     case PAT_WORD_LAST:         //"\>"
-        if (!text_is_word(text) && (text_is_end(text) || text_is_word(text-1))) {
+        if (text_is_word_last(text)) {
             *match_len = 0;
             return 1;
         }
         return 0;
     case PAT_WORD_DELIM:        //"\b"
-        if ((text_is_word(text) && (text_is_start(text) || !text_is_word(text-1))) ||
-            (!text_is_word(text) && (text_is_end(text) || text_is_word(text-1)))) {
+        if (text_is_word_first(text) || text_is_word_last(text)) {
             *match_len = 0;
             return 1;
         }
         return 0;
     case PAT_NOT_WORD_DELIM:    //"\B"
-        if ((text_is_word(text) && !(text_is_start(text) || !text_is_word(text-1))) ||
-            (!text_is_word(text) && !(text_is_end(text) || text_is_word(text-1)))) {
+        if (!text_is_word_first(text) && !text_is_word_last(text)) {
             *match_len = 0;
             return 1;
         }

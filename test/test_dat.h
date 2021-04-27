@@ -373,6 +373,21 @@
     {__LINE__, {"ab\0cd",5},    {"(b\0c)",5},       {{"b\0c",3},{"b\0c",3}},2, 0, REG_EXTENDED},
     {__LINE__, {"ab\0cd",5},    {"b(\0)c",5},       {{"b\0c",3},{"\0",1}},  2, 0, REG_EXTENDED},
     {__LINE__, {"\0\01a",3},    {"[[:cntrl:]]*",0}, {{"\0\01",2}},          1, 0, REG_BRE_ERE},
+//text_endのオーバーランチェック
+    {__LINE__, {"abc",2},       {"abc"},            {{""}},                 1, 1, REG_BRE_ERE},
+    {__LINE__, {"あい",3},      {"あい"},           {{""}},                 1, 1, REG_BRE_ERE},
+    {__LINE__, {"abc",2},       {"ab."},            {{""}},                 1, 1, REG_BRE_ERE},
+    {__LINE__, {"abc",2},       {"ab(c)"},          {{""}},                 1, 1, REG_EXTENDED},
+    {__LINE__, {"aba",2},       {"(a)b\\1"},        {{""}},                 1, 1, REG_EXTENDED},
+    {__LINE__, {"a\n",1},       {"^"},              {{""}},                 1, 1, REG_BRE_ERE|REG_NEWLINE,REG_NOTBOL},
+    {__LINE__, {"a\n",1},       {"a$"},             {{""}},                 1, 1, REG_BRE_ERE|REG_NEWLINE,REG_NOTEOL},
+    {__LINE__, {"a,c",2},       {",\\<"},           {{""}},                 1, 1, REG_BRE_ERE},
+    {__LINE__, {"abc",2},       {"ab\\>"},          {{"ab"}},               1, 0, REG_BRE_ERE},
+    {__LINE__, {"a,c",2},       {",\\b"},           {{""}},                 1, 1, REG_BRE_ERE},
+    {__LINE__, {"abc",2},       {"ab\\b"},          {{"ab"}},               1, 0, REG_BRE_ERE},
+    {__LINE__, {"abc",2},       {"ab\\b"},          {{"ab"}},               1, 0, REG_BRE_ERE},
+    {__LINE__, {"abc",2},       {"ab\\B"},          {{""}},                 1, 1, REG_BRE_ERE},
+    {__LINE__, {"aaa",2},       {"a{3}"},           {{""}},                 1, 1, REG_EXTENDED},
 
 //  Word
     {__LINE__, {"scan can."},   {"\\<can"},         {{"can"}},              1, 0, REG_BRE_ERE},
@@ -401,6 +416,7 @@
     {__LINE__, {"あいう"},      {"^あ"},            {{"あ"}},               1, 0, REG_EXTENDED},
     {__LINE__, {"あいあ"},      {"あ$"},            {{"あ"}},               1, 0, REG_EXTENDED},
     {__LINE__, {"あいう"},      {"(あ|い)*"},       {{"あい"}},             1, 0, REG_EXTENDED},
+    {__LINE__, {"あいう"},      {".."},             {{"あい"}},             1, 0, REG_EXTENDED},
 //  {__LINE__, {"あいう"},      {"[あい]*"},        {{"あい"}},             1, 0, REG_EXTENDED},
 //  {__LINE__, {"a1α１一あ"},   {"[[:alnum:]]*"},  {{"a1α１一"}},          1, 0, REG_EXTENDED},
 //}
