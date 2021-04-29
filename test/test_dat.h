@@ -376,7 +376,11 @@
 //text_endのオーバーランチェック
     {__LINE__, {"abc",2},       {"abc"},            {{""}},                 1, 1, REG_BRE_ERE},
     {__LINE__, {"あい",3},      {"あい"},           {{""}},                 1, 1, REG_BRE_ERE},
+#ifdef REG_ENABLE_UTF8
     {__LINE__, {"abc",2},       {"ab."},            {{""}},                 1, 1, REG_BRE_ERE},
+    {__LINE__, {"あ",1},        {"."},              {{""}},                 1, 1, REG_BRE_ERE},
+    {__LINE__, {"あ"},          {"あ",1},           {{"あ",1}},             1, 0, REG_BRE_ERE},
+#endif //REG_ENABLE_UTF8
     {__LINE__, {"abc",2},       {"ab(c)"},          {{""}},                 1, 1, REG_EXTENDED},
     {__LINE__, {"aba",2},       {"(a)b\\1"},        {{""}},                 1, 1, REG_EXTENDED},
     {__LINE__, {"a\n",1},       {"^"},              {{""}},                 1, 1, REG_BRE_ERE|REG_NEWLINE,REG_NOTBOL},
@@ -410,6 +414,7 @@
     {__LINE__, {"begin end"},   {"\\w+\\'"},        {{"end"}},              1, 0, REG_EXTENDED},
 
 //  UTF-8
+#ifdef REG_ENABLE_UTF8
     {__LINE__, {"あいう"},      {"あ"},             {{"あ"}},               1, 0, REG_EXTENDED},
     {__LINE__, {"ああう"},      {"あ*"},            {{"ああ"}},             1, 0, REG_EXTENDED},
     {__LINE__, {"ああう"},      {"(あ)*"},          {{"ああ"}},             1, 0, REG_EXTENDED},
@@ -417,6 +422,35 @@
     {__LINE__, {"あいあ"},      {"あ$"},            {{"あ"}},               1, 0, REG_EXTENDED},
     {__LINE__, {"あいう"},      {"(あ|い)*"},       {{"あい"}},             1, 0, REG_EXTENDED},
     {__LINE__, {"あいう"},      {".."},             {{"あい"}},             1, 0, REG_EXTENDED},
-//  {__LINE__, {"あいう"},      {"[あい]*"},        {{"あい"}},             1, 0, REG_EXTENDED},
-//  {__LINE__, {"a1α１一あ"},   {"[[:alnum:]]*"},  {{"a1α１一"}},          1, 0, REG_EXTENDED},
+    {__LINE__, {"あいbう"},     {"[あaい]*"},       {{"あい"}},             1, 0, REG_EXTENDED},
+    {__LINE__, {"あbいう"},     {"[^aい]*"},        {{"あb"}},              1, 0, REG_EXTENDED},
+    {__LINE__, {"あ１０"},      {"[０-９]+"},       {{"１０"}},             1, 0, REG_EXTENDED},
+    {__LINE__, {"１０あ"},      {"[^０-９]+"},      {{"あ"}},               1, 0, REG_EXTENDED},
+    {__LINE__, {"aβｆ１三あ1"},{"[[:alpha:]]+"},   {{"aβｆ１三あ"}},      1, 0, REG_EXTENDED},
+    {__LINE__, {"a1βｆ１三あ"},{"[[:alnum:]]+"},   {{"a1βｆ１三あ"}},     1, 0, REG_EXTENDED},
+    {__LINE__, {"aβ1１三あ"},  {"[[:digit:]]+"},   {{"1"}},                1, 0, REG_EXTENDED},
+    {__LINE__, {"a1ｆ１三あ"},  {"[[:xdigit:]]+"},  {{"a1"}},               1, 0, REG_EXTENDED},
+    {__LINE__, {"aβｆ１三あ"}, {"[[:lower:]]+"},   {{"aβｆ"}},            1, 0, REG_EXTENDED},
+    {__LINE__, {"aβｆ１三あ"}, {"[[:upper:]]+"},   {{""}},                 1, 1, REG_EXTENDED},
+    {__LINE__, {"ZΣＦ１三あ"}, {"[[:upper:]]+"},   {{"ZΣＦ"}},            1, 0, REG_EXTENDED},
+    {__LINE__, {"aあ　 \t\n"},  {"[[:blank:]]+"},   {{"　 \t"}},            1, 0, REG_EXTENDED},
+    {__LINE__, {"aあ　 \t\n"},  {"[[:space:]]+"},   {{"　 \t\n"}},          1, 0, REG_EXTENDED},
+    {__LINE__, {"aβ１三あ1"},  {"[[:print:]]+"},   {{"aβ１三あ1"}},       1, 0, REG_EXTENDED},
+    {__LINE__, {"aβ１三あ1"},  {"[[:graph:]]+"},   {{"aβ１三あ1"}},       1, 0, REG_EXTENDED},
+    {__LINE__, {"\01\177"},     {"[[:cntrl:]]*"},   {{"\01\177"}},          1, 0, REG_EXTENDED},
+    {__LINE__, {"[:＆＋￥a]"},  {"[[:punct:]]*"},   {{"[:＆＋￥"}},         1, 0, REG_EXTENDED},
+
+    {__LINE__, {"ZΣＡあ"},     {"zσａ"},          {{"ZΣＡ"}},            1, 0, REG_EXTENDED|REG_ICASE},
+    {__LINE__, {"zσａあ"},     {"ZΣＡ"},          {{"zσａ"}},            1, 0, REG_EXTENDED|REG_ICASE},
+    {__LINE__, {"ZΣＡあ"},     {"[zσａ]+"},       {{"ZΣＡ"}},            1, 0, REG_EXTENDED|REG_ICASE},
+    {__LINE__, {"zσａあ"},     {"[ZΣＡ]+"},       {{"zσａ"}},            1, 0, REG_EXTENDED|REG_ICASE},
+    {__LINE__, {"ZΣＡあ"},     {"[a-zα-σａ-ｚ]+"},{{"ZΣＡ"}},           1, 0, REG_EXTENDED|REG_ICASE},
+    {__LINE__, {"zσａあ"},     {"[A-ZΑ-ΣＡ-Ｚ]+"},{{"zσａ"}},           1, 0, REG_EXTENDED|REG_ICASE},
+    {__LINE__, {"ZΣＡあ"},     {"[[:lower:]]+"},   {{"ZΣＡあ"}},          1, 0, REG_EXTENDED|REG_ICASE},
+    {__LINE__, {"zσａあ"},     {"[[:upper:]]+"},   {{"zσａあ"}},          1, 0, REG_EXTENDED|REG_ICASE},
+    {__LINE__, {"aBβΣｂＺっ"},{"[[:lower:]]+"},   {{"aBβΣｂＺっ"}},     1, 0, REG_EXTENDED|REG_ICASE},
+    {__LINE__, {"aBc"},         {"[[:alpha:]]+"},   {{"aBc"}},              1, 0, REG_EXTENDED|REG_ICASE},
+#endif
+
+//  {__LINE__, {"a"},           {"[^a]"},           {{""}},                 1, 1, REG_EXTENDED|REG_DUMP},   //dumpテスト
 //}

@@ -133,7 +133,11 @@ static int test_regexp(test_bstr_t *test_data) {
             printf(", startend=%d,%d", test_data->start, test_data->end);
             printf("\n");
             if (1 || !match_sub || dump_flag) {
-                printf("  pmatch1=[%d,%d], pmatch2=[%d,%d], expected_match='", so1, eo1, so2, eo2);
+                printf("  pmatch1[%d,%d]='", so1, eo1);
+                reg_print_str(stdout, text+so1, eo1-so1);
+                printf("', pmatch2[%d,%d]='", so2, eo2);
+                reg_print_str(stdout, text+so2, eo2-so2);
+                printf("', expected_match='");
                 reg_print_str(stdout, bstr, len);
                 printf("'\n");
             }
@@ -148,11 +152,19 @@ static int test_regexp(test_bstr_t *test_data) {
         printf("%d: regex:  regexp='", n);
         reg_print_str(stdout, regexp, rlen);
         printf("', errcode=%d, %s\n", gnu_err_info.err_code, gnu_err_info.err_msg);
-        for (int i=0; i<nmatch1; i++) printf("    pmatch1[%d]=[%d,%d]\n", i, pmatch1[i].rm_so, pmatch1[i].rm_eo);
+        for (int i=0; i<nmatch1; i++) {
+            printf("    pmatch1[%d][%d,%d]='", i, pmatch1[i].rm_so, pmatch1[i].rm_eo);
+            reg_print_str(stdout, text+pmatch1[i].rm_so, pmatch1[i].rm_eo-pmatch1[i].rm_so);
+            printf("'\n");
+        }
         printf("%d: regexp: regexp='", n);
         reg_print_str(stdout, regexp, rlen);
         printf("', errcode=%d, %s\n", reg_err_info.err_code, reg_err_info.err_msg);
-        for (int i=0; i<nmatch2; i++) printf("    pmatch2[%d]=[%d,%d]\n", i, pmatch2[i].rm_so, pmatch2[i].rm_eo);
+        for (int i=0; i<nmatch2; i++) {
+            printf("    pmatch2[%d][%d,%d]='", i, pmatch2[i].rm_so, pmatch2[i].rm_eo);
+            reg_print_str(stdout, text+pmatch2[i].rm_so, pmatch2[i].rm_eo-pmatch2[i].rm_so);
+            printf("'\n");
+        }
     }
 
     free(pmatch1);
