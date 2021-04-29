@@ -194,28 +194,24 @@ static const char *pattern_type_str[] = {
 };
 
 #ifdef REG_ENABLE_UTF8
-typedef enum {
-    CHAR_SET_RANGE,
-    CHAR_SET_ALPHA,
-    CHAR_SET_ALNUM,
-    CHAR_SET_DIGIT,
-    CHAR_SET_XDIGIT,
-    CHAR_SET_LOWER,
-    CHAR_SET_UPPER,
-    CHAR_SET_BLANK,
-    CHAR_SET_SPACE,
-    CHAR_SET_PRINT,
-    CHAR_SET_GRAPH,
-    CHAR_SET_CNTRL,
-    CHAR_SET_PUNCT,
-} char_set_type_t;
+enum {
+    CHAR_CLASS_ALPHA  = (1),      //文字セット
+    CHAR_CLASS_ALNUM  = (1<<1),
+    CHAR_CLASS_DIGIT  = (1<<2),
+    CHAR_CLASS_XDIGIT = (1<<3),
+    CHAR_CLASS_LOWER  = (1<<4),
+    CHAR_CLASS_UPPER  = (1<<5),
+    CHAR_CLASS_BLANK  = (1<<6),
+    CHAR_CLASS_SPACE  = (1<<7),
+    CHAR_CLASS_PRINT  = (1<<8),
+    CHAR_CLASS_GRAPH  = (1<<9),
+    CHAR_CLASS_CNTRL  = (1<<10),
+    CHAR_CLASS_PUNCT  = (1<<11),
+};
 typedef struct {
-    char_set_type_t type;
-    struct {
-        wchar_t wc_start;   //開始文字（ワイド文字）CHAR_SET_RANGEの場合のみ使用
-        wchar_t wc_end;     //終了文字（ワイド文字）
-    };
-} char_set_entry_t;
+    wchar_t wc_start;       //開始文字（ワイド文字）CHAR_SET_RANGEの場合のみ使用
+    wchar_t wc_end;         //終了文字（ワイド文字）
+} char_range_t;
 #endif //REG_ENABLE_UTF8
 
 //[s], [^s]を格納する文字セット
@@ -223,10 +219,13 @@ typedef struct {
     char reverse;           //否定 [^...]
     char chars[256];        //ASCIIのみ、0:指定あり、1:指定あり
 #ifdef REG_ENABLE_UTF8
-    wchar_t *wcstr;         //ワイド文字列
-    int wcs_len;            //wcstrに格納された文字列の数
-    int wcs_size;           //wcstrの最大要素数
-    array_t *list;          //char_set_entry_t*のアレイ
+    struct {
+        wchar_t *wcstr;     //ワイド文字列（1バイト文字は含まない）
+        int wcs_len;        //wcstrに格納された文字列の数
+        int wcs_size;       //wcstrの最大要素数
+    };
+    int char_class;         //文字クラス
+    array_t *ranges;        //char_range_t*のアレイ(CHAR_SET_RANGE/ALPHA/ALNUM/...)
 #endif //REG_ENABLE_UTF8
 } char_set_t;
 
@@ -757,24 +756,18 @@ static int push_char_set_mbc(char_set_t *char_set, const char *mbc, int max_len)
 }
 
 static void push_char_set_range(char_set_t *char_set, const char *start, int slen, const char *end, int elen) {
-    char_set_entry_t *csentry = calloc(1, sizeof(char_set_entry_t));
-    push_array(char_set->list, csentry);
-    csentry->type = CHAR_SET_RANGE;
+    char_range_t *range = calloc(1, sizeof(char_range_t));
+    push_array(char_set->ranges, range);
     int ret;
-    ret = mbtowc(&csentry->wc_start, start, slen);
-    if (ret<0) csentry->wc_start = L'■';
-    ret = mbtowc(&csentry->wc_end  , end,   elen);
-    if (ret<0) csentry->wc_end = L'■';
+    ret = mbtowc(&range->wc_start, start, slen);
+    if (ret<0) range->wc_start = L'■';
+    ret = mbtowc(&range->wc_end  , end,   elen);
+    if (ret<0) range->wc_end = L'■';
 }
-
-static void push_char_set_class(char_set_t *char_set, char_set_type_t type) {
-    char_set_entry_t *csentry = calloc(1, sizeof(char_set_entry_t));
-    push_array(char_set->list, csentry);
-    csentry->type = type;
-}
+#define push_char_set_class(char_set, type) ((char_set)->char_class|=(type))
 #else
 #define push_char_set_mbc(a,b,c)
-#define push_char_set_class(a,b)
+#define push_char_set_class(a, b)
 #endif //REG_ENABLE_UTF8
 
 //push_char_set: 文字セットに1バイト文字を追加する。
@@ -797,7 +790,7 @@ static reg_stat_t new_char_set(reg_compile_t *preg_compile) {
     char_set_t *char_set;
     pat->cset = char_set = calloc(1, sizeof(char_set_t));
 #ifdef REG_ENABLE_UTF8
-    char_set->list = new_array(0);
+    char_set->ranges = new_array(0);
     const char* range_start = NULL; //範囲指定の開始文字の位置
 #endif //REG_ENABLE_UTF8
     int range_start_len = 0;        //範囲指定の開始文字の長さ。0でない場合は次の文字で範囲指定の'-'が利用できる
@@ -882,7 +875,7 @@ static reg_stat_t new_char_set_ext(reg_compile_t *preg_compile) {
     char_set_t *char_set;
     pat->cset = char_set = calloc(1, sizeof(char_set_t));;
 #ifdef REG_ENABLE_UTF8
-    char_set->list = new_array(0);
+    char_set->ranges = new_array(0);
 #endif //REG_ENABLE_UTF8
 
     switch (*preg_compile->p++) {
@@ -943,58 +936,58 @@ static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_s
     regexp += 2;
     if        (strncmp(regexp, "upper", 5)==0) {
         for (int c='A'; c<='Z'; c++) push_char_set(char_set, c);
-        push_char_set_class(char_set, CHAR_SET_UPPER);
+        push_char_set_class(char_set, CHAR_CLASS_UPPER);
         regexp += 5;
     } else if (strncmp(regexp, "lower", 5)==0) {
         for (int c='a'; c<='z'; c++) push_char_set(char_set, c);
-        push_char_set_class(char_set, CHAR_SET_LOWER);
+        push_char_set_class(char_set, CHAR_CLASS_LOWER);
         regexp += 5;
     } else if (strncmp(regexp, "alpha", 5)==0) {
         set_alpha(char_set);
-        push_char_set_class(char_set, CHAR_SET_ALPHA);
+        push_char_set_class(char_set, CHAR_CLASS_ALPHA);
         regexp += 5;
     } else if (strncmp(regexp, "alnum", 5)==0) {
         set_alnum(char_set);
-        push_char_set_class(char_set, CHAR_SET_ALNUM);
+        push_char_set_class(char_set, CHAR_CLASS_ALNUM);
         regexp += 5;
     } else if (strncmp(regexp, "digit", 5)==0) {
         for (int c='0'; c<='9'; c++) push_char_set(char_set, c);
-        push_char_set_class(char_set, CHAR_SET_DIGIT);
+        push_char_set_class(char_set, CHAR_CLASS_DIGIT);
         regexp += 5;
     } else if (strncmp(regexp, "xdigit", 6)==0) {
         for (int c='0'; c<='9'; c++) push_char_set(char_set, c);
         for (int c='A'; c<='F'; c++) push_char_set(char_set, c);
         if (!(reg_syntax&RE_ICASE))
             for (int c='a'; c<='f'; c++) push_char_set(char_set, c);
-        push_char_set_class(char_set, CHAR_SET_XDIGIT);
+        push_char_set_class(char_set, CHAR_CLASS_XDIGIT);
         regexp += 6;
     } else if (strncmp(regexp, "punct", 5)==0) {
         set_punct(char_set);
-        push_char_set_class(char_set, CHAR_SET_PUNCT);
+        push_char_set_class(char_set, CHAR_CLASS_PUNCT);
         regexp += 5;
     } else if (strncmp(regexp, "blank", 5)==0) {
         push_char_set_str(char_set, " \t");
-        push_char_set_class(char_set, CHAR_SET_BLANK);
+        push_char_set_class(char_set, CHAR_CLASS_BLANK);
         regexp += 5;
     } else if (strncmp(regexp, "space", 5)==0) {
         push_char_set_str(char_set, " \t\n\r\f\v");
-        push_char_set_class(char_set, CHAR_SET_SPACE);
+        push_char_set_class(char_set, CHAR_CLASS_SPACE);
         regexp += 5;
     } else if (strncmp(regexp, "cntrl", 5)==0) {
         for (int c=0x00; c<=0x1f; c++) push_char_set(char_set, c);
-        push_char_set_class(char_set, CHAR_SET_CNTRL);
+        push_char_set_class(char_set, CHAR_CLASS_CNTRL);
         push_char_set(char_set, 0x7f);
         regexp += 5;
     } else if (strncmp(regexp, "graph", 5)==0) {            //alnum + punct
         set_alnum(char_set);
         set_punct(char_set);
-        push_char_set_class(char_set, CHAR_SET_GRAPH);
+        push_char_set_class(char_set, CHAR_CLASS_GRAPH);
         regexp += 5;
     } else if (strncmp(regexp, "print", 5)==0) {            //alnum + punct + ' '
         set_alnum(char_set);
         set_punct(char_set);
         push_char_set(char_set, ' ');
-        push_char_set_class(char_set, CHAR_SET_PRINT);
+        push_char_set_class(char_set, CHAR_CLASS_PRINT);
         regexp += 5;
     } else {
         reg_set_err(REG_ERR_CODE_INVALID_CHAR_CLASS);
@@ -1079,10 +1072,11 @@ static int reg_exec_main(reg_compile_t *preg_compile, const char *text, int *mat
             return 0;   //成功
         }
         if (preg_compile->match_here) break;
+    }
 #ifdef REG_ENABLE_UTF8
-    } while (!text_is_end(text) && (text+=reg_mblen(text, g_text_end-text)));
+    while (!text_is_end(text) && (text+=reg_mblen(text, g_text_end-text)));
 #else
-    } while (!text_is_end(text++));
+    while (!text_is_end(text++));
 #endif //REG_ENABLE_UTF8
 
     if (g_pmatch && g_pmatch[preg_compile->ref_num].rm_so<0) {
@@ -1125,7 +1119,7 @@ static int reg_match_here(reg_compile_t *preg_compile, pattern_t **pat, const ch
 }
 
 // reg_match_pat: 1個のパターンがマッチするかを判定
-// match_lenにはpatでマッチしたtextの長さを設定する。
+// match_lenにはpatでマッチしたtextの長さを設定して返す。
 static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char *text, int *match_len) {
 #ifdef REG_ENABLE_UTF8
     int mbc_len;
@@ -1159,11 +1153,12 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
 #endif //REG_ENABLE_UTF8
     case PAT_CHARSET:
         if (text_is_end(text)) return 0;
-        if (*text == '\n' && pat->cset->reverse && reg_syntax&RE_HAT_LISTS_NOT_NEWLINE) return 0;
+        char_set_t *cset = pat->cset;
+        if (*text == '\n' && cset->reverse && reg_syntax&RE_HAT_LISTS_NOT_NEWLINE) return 0;
 #ifdef REG_ENABLE_UTF8
         mbc_len = reg_mblen(text, g_text_end-text);
         if (mbc_len<=1) {   //1バイト文字。UTF-8として不正な文字と'\0'は1バイト文字として処理する。
-            if (pat->cset->chars[(reg_syntax&RE_ICASE)?toupper(*text):*text]) {
+            if (cset->chars[(reg_syntax&RE_ICASE)?toupper(*text):*text]) {
                 *match_len = 1;
                 return 1;
             };
@@ -1173,63 +1168,65 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
             assert(ret>0);
             if (reg_syntax&RE_ICASE) wc = towupper(wc);
             int match_flag = 0;
-            if (pat->cset->wcstr) {
-                for (int i=0; i<pat->cset->wcs_len; i++) {
+            if (cset->wcstr) {
+                for (int i=0; i<cset->wcs_len; i++) {
                     wchar_t wc2 = pat->cset->wcstr[i];
                     if (reg_syntax&RE_ICASE) wc2 = towupper(wc2);
                     if (wc2==wc) {
                         match_flag = 1;
-                        if (pat->cset->reverse) break;
+                        if (cset->reverse) break;
                         *match_len = mbc_len;
                         return 1;
                     }
                 }
             }
-            if (pat->cset->list) {
-                for (int i=0; i<num_array(pat->cset->list); i++) {
-                    char_set_entry_t *csentry = get_array(pat->cset->list, i);
-                    if (csentry->type==CHAR_SET_RANGE) {
-                        wchar_t wc_start = csentry->wc_start;
-                        wchar_t wc_end   = csentry->wc_end;
-                        if (reg_syntax&RE_ICASE) {
-                            wc_start = towupper(wc_start);
-                            wc_end   = towupper(wc_end);
-                        }
-                        if (wc_start<=wc && wc<=wc_end) {
-                            match_flag = 1;
-                            if (pat->cset->reverse) break;
-                            *match_len = mbc_len;
-                            return 1;
-                        }
-                    } else {    //文字クラス
-                        switch(csentry->type) {
-                        case CHAR_SET_ALPHA:  match_flag = iswalpha (wc); break;
-                        case CHAR_SET_ALNUM:  match_flag = iswalnum (wc); break;
-                        case CHAR_SET_DIGIT:  match_flag = iswdigit (wc); break;
-                        case CHAR_SET_XDIGIT: match_flag = iswxdigit(wc); break;
-                        case CHAR_SET_LOWER:  match_flag = (reg_syntax&RE_ICASE)?
-                                                           iswalpha (wc):
-                                                           iswlower (wc); break;
-                        case CHAR_SET_UPPER:  match_flag = (reg_syntax&RE_ICASE)?
-                                                           iswalpha (wc):
-                                                           iswupper (wc); break;
-                        case CHAR_SET_BLANK:  match_flag = iswblank (wc); break;
-                        case CHAR_SET_SPACE:  match_flag = iswspace (wc); break;
-                        case CHAR_SET_PRINT:  match_flag = iswprint (wc); break;
-                        case CHAR_SET_GRAPH:  match_flag = iswgraph (wc); break;
-                        case CHAR_SET_CNTRL:  match_flag = iswcntrl (wc); break;
-                        case CHAR_SET_PUNCT:  match_flag = iswpunct (wc); break;
-                        default: break;
-                        }
-                        if (match_flag) {
-                            if (pat->cset->reverse) break;
-                            *match_len = mbc_len;
-                            return 1;
-                        }
+            if (cset->char_class) {
+                for (int i=1; i<=CHAR_CLASS_PUNCT; i*=2) {
+                    if (!(cset->char_class&i)) continue;
+                    switch (i) {
+                    case CHAR_CLASS_ALPHA:  match_flag = iswalpha (wc); break;
+                    case CHAR_CLASS_ALNUM:  match_flag = iswalnum (wc); break;
+                    case CHAR_CLASS_DIGIT:  match_flag = iswdigit (wc); break;
+                    case CHAR_CLASS_XDIGIT: match_flag = iswxdigit(wc); break;
+                    case CHAR_CLASS_LOWER:  match_flag = (reg_syntax&RE_ICASE)?
+                                                        iswalpha (wc):
+                                                        iswlower (wc); break;
+                    case CHAR_CLASS_UPPER:  match_flag = (reg_syntax&RE_ICASE)?
+                                                        iswalpha (wc):
+                                                        iswupper (wc); break;
+                    case CHAR_CLASS_BLANK:  match_flag = iswblank (wc); break;
+                    case CHAR_CLASS_SPACE:  match_flag = iswspace (wc); break;
+                    case CHAR_CLASS_PRINT:  match_flag = iswprint (wc); break;
+                    case CHAR_CLASS_GRAPH:  match_flag = iswgraph (wc); break;
+                    case CHAR_CLASS_CNTRL:  match_flag = iswcntrl (wc); break;
+                    case CHAR_CLASS_PUNCT:  match_flag = iswpunct (wc); break;
+                    default: break;
+                    }
+                    if (match_flag) {
+                        if (cset->reverse) break;
+                        *match_len = mbc_len;
+                        return 1;
                     }
                 }
             }
-            if (!match_flag && pat->cset->reverse) {
+            if (cset->ranges) {
+                for (int i=0; i<num_array(cset->ranges); i++) {
+                    char_range_t *range = get_array(cset->ranges, i);
+                    wchar_t wc_start = range->wc_start;
+                    wchar_t wc_end   = range->wc_end;
+                    if (reg_syntax&RE_ICASE) {
+                        wc_start = towupper(wc_start);
+                        wc_end   = towupper(wc_end);
+                    }
+                    if (wc_start<=wc && wc<=wc_end) {
+                        match_flag = 1;
+                        if (cset->reverse) break;
+                        *match_len = mbc_len;
+                        return 1;
+                    }
+                }
+            }
+            if (!match_flag && cset->reverse) {
                 *match_len = mbc_len;
                 return 1;
             }
@@ -1237,7 +1234,7 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
         return 0;
 #else
         *match_len = 1;
-        return pat->cset->chars[(reg_syntax&RE_ICASE)?toupper(*text):*text];
+        return cset->chars[(reg_syntax&RE_ICASE)?toupper(*text):*text];
 #endif //REG_ENABLE_UTF8
     case PAT_DOT:
         if (text_is_end(text)) return 0;
@@ -1375,10 +1372,10 @@ static void reg_pattern_free(pattern_t *pat) {
     switch (pat->type) {
     case PAT_CHARSET:
 #ifdef REG_ENABLE_UTF8
-        for (int i=num_array(pat->cset->list)-1; i>=0; i--) {
-            free(get_array(pat->cset->list, i));
+        for (int i=num_array(pat->cset->ranges)-1; i>=0; i--) {
+            free(get_array(pat->cset->ranges, i));
         }
-        free_array(pat->cset->list);
+        free_array(pat->cset->ranges);
 #endif //REG_ENABLE_UTF8
         free(pat->cset);
         pat->cset = NULL;
@@ -1465,21 +1462,20 @@ const char* reg_syntax2str(int syntax) {
 #ifdef REG_ENABLE_UTF8
 #define CLASS_TBL(s)   {CHAR_SET_##s, #s}
 static name_tbl_t class_tbl[] = {
-    {CHAR_SET_RANGE, "range"},
-    {CHAR_SET_ALPHA, "alpha"},
-    {CHAR_SET_ALNUM, "alnum"},
-    {CHAR_SET_DIGIT, "digit"},
-    {CHAR_SET_XDIGIT,"xdigit"},
-    {CHAR_SET_LOWER, "lower"},
-    {CHAR_SET_UPPER, "upper"},
-    {CHAR_SET_BLANK, "blank"},
-    {CHAR_SET_SPACE, "space"},
-    {CHAR_SET_PRINT, "print"},
-    {CHAR_SET_GRAPH, "graph"},
-    {CHAR_SET_CNTRL, "cntrl"},
-    {CHAR_SET_PUNCT, "punct"},
+    {CHAR_CLASS_ALPHA, "alpha"},
+    {CHAR_CLASS_ALNUM, "alnum"},
+    {CHAR_CLASS_DIGIT, "digit"},
+    {CHAR_CLASS_XDIGIT,"xdigit"},
+    {CHAR_CLASS_LOWER, "lower"},
+    {CHAR_CLASS_UPPER, "upper"},
+    {CHAR_CLASS_BLANK, "blank"},
+    {CHAR_CLASS_SPACE, "space"},
+    {CHAR_CLASS_PRINT, "print"},
+    {CHAR_CLASS_GRAPH, "graph"},
+    {CHAR_CLASS_CNTRL, "cntrl"},
+    {CHAR_CLASS_PUNCT, "punct"},
 };
-static const char* reg_class2str(char_set_type_t type) {
+static const char* reg_class2str(int type) {
     for (int i=0; i<sizeof(class_tbl)/sizeof(class_tbl[0]); i++) {
         if (class_tbl[i].num==type) return class_tbl[i].name;
     }
@@ -1584,30 +1580,31 @@ void reg_dump(FILE *fp, reg_compile_t *preg_compile, int indent) {
 #endif //REG_ENABLE_UTF8
         case PAT_CHARSET:
             fprintf(fp, "%s", pat->cset->reverse?"^":"");
+            char_set_t *cset = pat->cset;
 #ifdef REG_ENABLE_UTF8
             int cnt = 0;
-            for (int i=0; i<256; i++) if (pat->cset->chars[i]) cnt++;
+            for (int i=0; i<256; i++) if (cset->chars[i]) cnt++;
             if (cnt && cnt!=256) {
                 fprintf(fp, "[");
-                reg_print_char_set(fp, pat->cset);
+                reg_print_char_set(fp, cset);
                 fprintf(fp, "] ");
             }
             fprintf(fp, "[");
-            if (pat->cset->list) {
-                for (int i=0; i<num_array(pat->cset->list); i++) {
-                    char_set_entry_t *csentry = get_array(pat->cset->list, i);
-                    if (csentry->type==CHAR_SET_RANGE) {
-                        reg_print_wc(fp, csentry->wc_start);
-                        fputc('-', fp);
-                        reg_print_wc(fp, csentry->wc_end);
-                    } else {
-                        fprintf(fp, "[:%s:]", reg_class2str(csentry->type));
-                    }
+            for (int i=1; i<=CHAR_CLASS_PUNCT; i*=2) {
+                if (!(cset->char_class&i)) continue;
+                fprintf(fp, "[:%s:]", reg_class2str(i));
+            }
+            if (cset->ranges) {
+                for (int i=0; i<num_array(cset->ranges); i++) {
+                    char_range_t *range = get_array(cset->ranges, i);
+                    reg_print_wc(fp, range->wc_start);
+                    fputc('-', fp);
+                    reg_print_wc(fp, range->wc_end);
                 }
             }
 #else
             fprintf(fp, "[");
-            reg_print_char_set(fp, pat->cset);
+            reg_print_char_set(fp, cset);
 #endif //REG_ENABLE_UTF8
             fprintf(fp, "]\n");
             break;
