@@ -195,7 +195,7 @@ static const char *pattern_type_str[] = {
 
 #ifdef REG_ENABLE_UTF8
 enum {
-    CHAR_CLASS_ALPHA  = (1),      //文字セット
+    CHAR_CLASS_ALPHA  = (1),      //文字クラス
     CHAR_CLASS_ALNUM  = (1<<1),
     CHAR_CLASS_DIGIT  = (1<<2),
     CHAR_CLASS_XDIGIT = (1<<3),
@@ -209,7 +209,7 @@ enum {
     CHAR_CLASS_PUNCT  = (1<<11),
 };
 typedef struct {
-    wchar_t wc_start;       //開始文字（ワイド文字）CHAR_SET_RANGEの場合のみ使用
+    wchar_t wc_start;       //開始文字（ワイド文字）
     wchar_t wc_end;         //終了文字（ワイド文字）
 } char_range_t;
 #endif //REG_ENABLE_UTF8
@@ -220,12 +220,12 @@ typedef struct {
     char chars[256];        //ASCIIのみ、0:指定あり、1:指定あり
 #ifdef REG_ENABLE_UTF8
     struct {
-        wchar_t *wcstr;     //ワイド文字列（1バイト文字は含まない）
-        int wcs_len;        //wcstrに格納された文字列の数
+        wchar_t *wcstr;     //ワイド文字列（1バイト文字charsで管理するのでここには含まない）
+        int wcs_len;        //wcstrに格納された文字列の長さ（文字数）
         int wcs_size;       //wcstrの最大要素数
     };
-    int char_class;         //文字クラス
-    array_t *ranges;        //char_range_t*のアレイ(CHAR_SET_RANGE/ALPHA/ALNUM/...)
+    int char_class;         //文字クラス（CHARA_CLASS_*のbit-OR）
+    array_t *ranges;        //char_range_t*のアレイ
 #endif //REG_ENABLE_UTF8
 } char_set_t;
 
@@ -252,13 +252,14 @@ typedef struct regcomp {
     unsigned int newline_anchor:1;  //\nをアンカーとする（^/$にマッチする）
     short nparen;           //()の数（0-9）
     short ref_num;          //SUBREGの場合の後方参照の番号（0-9）
-    int backref_list;       //(1 << n)ビットが1なら\nによる後方参照対象がこのsubreg内に存在する
+    int backref_flags;      //(1 << n)ビットが1なら\nによる後方参照対象がこのsubreg内に存在する
     int cflags;             //正規表現のコンパイルフラグ(REG_EXTENDED|...)
     int eflags;             //正規表現の実行フラグ(REG_NOTBOL|...)
     int syntax;             //正規表現のsyntax。RE_*
     //コンパイル時の作業用
     int rlen;               //regexpの長さ
-    const char *regexp;     //元の正規表現
+    const char *regexp;     //コンパイル時に指定された正規表現
+    int regexp_len;         //regexpの長さ
     const char *p;          //regexpを指す作業ポインタ
     pattern_t *prev_pat;    //直前のパターン
     pattern_type_t mode;    //処理中のパターン（PAT_SUBREG:"\)"が終了）
@@ -274,7 +275,7 @@ typedef enum {
 static void push_char_set(char_set_t *char_set, unsigned char c);
 static void push_char_set_str(char_set_t *char_set, const char *str);
 static pattern_t *new_pattern(pattern_type_t type);
-static reg_compile_t *new_reg_compile(const char *regexp);
+static reg_compile_t *new_reg_compile(void);
 static reg_compile_t *reg_exp     (const char *regexp, pattern_type_t mode);
 static reg_compile_t *sequence_exp(const char *regexp, pattern_type_t mode);
 static reg_stat_t repeat_exp  (reg_compile_t *preg_compile);
@@ -367,11 +368,10 @@ static pattern_t *new_pattern(pattern_type_t type) {
 }
 
 // new_reg_compile: allocate new reg_compile
-static reg_compile_t *new_reg_compile(const char *regexp) {
+static reg_compile_t *new_reg_compile(void) {
     reg_compile_t *preg_compile = calloc(1, sizeof(reg_compile_t));
     assert(preg_compile);
     preg_compile->array = new_array(0);
-    preg_compile->regexp = preg_compile->p = regexp;
     return preg_compile;
 }
 
@@ -387,7 +387,7 @@ static void push_pattern(reg_compile_t *preg_compile, pattern_t *pat) {
         } else {
             pattern_t *pat_subreg = new_pattern(PAT_SUBREG);
             reg_compile_t *subreg;
-            pat_subreg->regcomp = subreg = new_reg_compile(NULL);
+            pat_subreg->regcomp = subreg = new_reg_compile();
             subreg->match_here = 1;
             subreg->ref_num = -1;
             push_array(subreg->array, peek_array(preg_compile->array, num-2));
@@ -426,10 +426,11 @@ static reg_compile_t *reg_exp(const char *regexp, pattern_type_t mode) {
             subreg->ref_num = -1;
             push_array(pat->or_array, subreg);
             //親を作り、以後この下にSUBREGを追加する
-            preg_compile = new_reg_compile(regexp);
+            preg_compile = new_reg_compile();
+            preg_compile->regexp = preg_compile->p = regexp;
+            preg_compile->regexp_len = g_regexp_end-regexp;
             preg_compile->mode = mode;
-            preg_compile->regexp = regexp;
-            preg_compile->backref_list = subreg->backref_list;
+            preg_compile->backref_flags = subreg->backref_flags;
             push_pattern(preg_compile, pat);
             push_pattern(preg_compile, new_pattern(PAT_NULL));
         }
@@ -443,7 +444,7 @@ static reg_compile_t *reg_exp(const char *regexp, pattern_type_t mode) {
         subreg->ref_num = -1;
         push_array(pat->or_array, subreg);
         preg_compile->p = subreg->p;
-        preg_compile->backref_list |= subreg->backref_list;
+        preg_compile->backref_flags |= subreg->backref_flags;
     }
 
     if (mode==PAT_SUBREG && token_is_close_paren(preg_compile->p)) {
@@ -462,7 +463,9 @@ static reg_compile_t *reg_exp(const char *regexp, pattern_type_t mode) {
 //              | repeat_exp ( "*" | "+" | "?" | "{" repeat_range "}" )?            ERE
 //戻り値：エラー時はNULLを返し、reg_err_code/reg_err_msgにエラー情報を設定する。
 static reg_compile_t *sequence_exp(const char *regexp, pattern_type_t mode) {
-    reg_compile_t *preg_compile = new_reg_compile(regexp);
+    reg_compile_t *preg_compile = new_reg_compile();
+    preg_compile->regexp = preg_compile->p = regexp;
+    preg_compile->regexp_len = g_regexp_end-regexp;
     preg_compile->mode = mode;
     reg_stat_t ret = REG_OK;
 
@@ -573,7 +576,7 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
             reg_set_err(REG_ERR_CODE_UNMATCHED_PAREN);
         } else if (token1_is(preg_compile->p, '\\') && preg_compile->p[1]>='1' && preg_compile->p[1]<='9') {
             int num = preg_compile->p[1] - '0';
-            if (num>MAX_PAREN || (preg_compile->backref_list&(1 << num))==0) {
+            if (num>MAX_PAREN || (preg_compile->backref_flags&(1 << num))==0) {
                 reg_set_err(REG_ERR_CODE_INVALID_BACK_REF);
             } else {
                 pat = new_pattern(PAT_BACKREF);
@@ -662,8 +665,8 @@ static reg_stat_t new_subreg(reg_compile_t *preg_compile) {
     push_pattern(preg_compile, pat);
     preg_compile->p = pat->regcomp->p;
     pat->regcomp->ref_num = ref_num;
-    preg_compile->backref_list |= pat->regcomp->backref_list;
-    preg_compile->backref_list |= (1 << ref_num);
+    preg_compile->backref_flags |= pat->regcomp->backref_flags;
+    preg_compile->backref_flags |= (1 << ref_num);
     return REG_OK;
 }
 
@@ -733,9 +736,8 @@ static reg_stat_t new_repeat(reg_compile_t *preg_compile) {
 }
 
 #ifdef REG_ENABLE_UTF8
-#define WCSTR_INIT_SIZE 2
-//push_char_set_mbc: 文字セットにUTF-8の1文字を追加し、消費したUTF-8のバイト数を返す。
-//不正な文字の場合は-1を返す。
+#define WCSTR_INIT_SIZE 4
+//push_char_set_mbc: 文字セットにUTF-8の1文字を追加し、消費したUTF-8のバイト数（1以上）を返す。
 static int push_char_set_mbc(char_set_t *char_set, const char *mbc, int max_len) {
     if (char_set->wcstr==NULL) {
         char_set->wcstr = calloc(WCSTR_INIT_SIZE, sizeof(wchar_t));
@@ -882,22 +884,24 @@ static reg_stat_t new_char_set_ext(reg_compile_t *preg_compile) {
     case 'w':           //[_[:alnum:]]
         push_char_set(char_set, '_');
         set_alnum(char_set);
+        push_char_set_class(char_set, CHAR_CLASS_ALNUM);
         break;
-    case 'W':           //[^\[:alnum:]]
+    case 'W':           //[^_[:alnum:]]
         char_set->reverse = 1;
         memset(char_set->chars, 1, 256);
         push_char_set(char_set, '_');
         set_alnum(char_set);
-        char_set->reverse = 0;
+        push_char_set_class(char_set, CHAR_CLASS_ALNUM);
         break;
     case 's':           //[[:space:]]
         push_char_set_str(char_set, " \t\n\r\f\v");
+        push_char_set_class(char_set, CHAR_CLASS_SPACE);
         break;
     case 'S':           //[^[:space:]]
         char_set->reverse = 1;
         memset(char_set->chars, 1, 256);
         push_char_set_str(char_set, " \t\n\r\f\v");
-        char_set->reverse = 0;
+        push_char_set_class(char_set, CHAR_CLASS_SPACE);
         break;
     default:
         return REG_ERR;
@@ -1017,13 +1021,13 @@ static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_s
                                  text_is_word((p)-1))       //pが単語境界の先頭/最後
 
 //検索時の作業用
-static const char* g_text_org;  //オリジナル検索文字列
-static const char *g_text_start;//検索文字列の先頭
-static const char *g_text_end;  //検索文字列の末尾の次の位置（文字列の終了判定に用いる）
+static const char* g_text_org;  //オリジナル検索文字列（reg_exec関数のtext引数）
+static const char *g_text_start;//検索文字列の先頭（^にマッチさせる位置）
+static const char *g_text_end;  //検索文字列の末尾の次の位置（文字列の終了判定に用いる）（$にマッチさせる位置）
 static int g_newline_anchor;    //\nをアンカーとする（^/$にマッチする）
-static size_t      g_nmatch;    //pmatchの要素数
-static regmatch_t *g_pmatch;    //マッチング位置を格納する配列
-static int         g_eflags;
+static size_t      g_nmatch;    //pmatchの要素数              （reg_exec関数のnmatch引数）
+static regmatch_t *g_pmatch;    //マッチング位置を格納する配列（reg_exec関数のpmatch引数）
+static int         g_eflags;    //検索モード                  （reg_exec関数のeflags引数）
 
 // reg_exec: search for compiled regexp anywhere in text
 //成功した場合は0、失敗した場合は0以外を返す。
@@ -1273,7 +1277,7 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
             reg_compile_t *subreg = peek_array(pat->or_array, i);
             if (reg_exec_main(subreg, text, match_len)==0) return 1;
             for (int i=1; i<g_nmatch; i++) {
-                if (preg_compile->backref_list&(1 << i)) {
+                if (preg_compile->backref_flags&(1 << i)) {
                     g_pmatch[i].rm_so = -1;
                     g_pmatch[i].rm_eo = -1;
                 }
@@ -1553,9 +1557,9 @@ void reg_dump(FILE *fp, reg_compile_t *preg_compile, int indent) {
     }
     fprintf(fp, "regexp='");
     reg_print_str(fp, preg_compile->regexp, preg_compile->rlen);
-    fprintf(fp, "', match_here=%d, newline_anchor=%d, nparen=%d, ref_num=%d, backref_list=%x, cflags=%s\n",
+    fprintf(fp, "', match_here=%d, newline_anchor=%d, nparen=%d, ref_num=%d, backref_flags=%x, cflags=%s\n",
         preg_compile->match_here, preg_compile->newline_anchor, preg_compile->nparen, preg_compile->ref_num,
-        preg_compile->backref_list, reg_cflags2str(preg_compile->cflags));
+        preg_compile->backref_flags, reg_cflags2str(preg_compile->cflags));
 
     if (preg_compile->syntax) {
         fprintf(stderr, "%*s", indent, ""); // indent個の空白を出力
