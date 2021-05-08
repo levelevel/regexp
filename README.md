@@ -4,6 +4,8 @@ GNU regex(POSIX)相当の基本正規表現(BRE)と拡張正規表現(ERE)をサ
 
 Unicode(UTF-8)にも対応しているが、実用を目指したものではない。
 
+PCRE(PCRE2)の一部対応中。
+
 ## 経緯
 
 [A Regular Expression Matcher, Code by Rob Pike](https://www.cs.princeton.edu/courses/archive/spr09/cos333/beautiful.html)
@@ -94,7 +96,7 @@ Unicode(UTF-8)にも対応しているが、実用を目指したものではな
 
 ## TODO
 
-- PCRE
+- PCRE(PCRE2)
 - パターン中の複数文字の連続を文字列単位の処理に変換すると検索効率が上がりそう。
 
 ## 参考資料
@@ -103,3 +105,4 @@ Unicode(UTF-8)にも対応しているが、実用を目指したものではな
 - [正規表現 : Wikipedia](https://ja.wikipedia.org/wiki/%E6%AD%A3%E8%A6%8F%E8%A1%A8%E7%8F%BE)
 - [UTF-8 : Wikipedia](https://ja.wikipedia.org/wiki/UTF-8)
 - [Man page of REGEX](https://linuxjm.osdn.jp/html/LDP_man-pages/man3/regex.3.html)
+- [Perl-compatible Regular Expressions (revised API: PCRE2)](https://www.pcre.org/current/doc/html/index.html)

@@ -1193,11 +1193,11 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
                     case CHAR_CLASS_DIGIT:  match_flag = iswdigit (wc); break;
                     case CHAR_CLASS_XDIGIT: match_flag = iswxdigit(wc); break;
                     case CHAR_CLASS_LOWER:  match_flag = (reg_syntax&RE_ICASE)?
-                                                        iswalpha (wc):
-                                                        iswlower (wc); break;
+                                                         iswalpha (wc):
+                                                         iswlower (wc); break;
                     case CHAR_CLASS_UPPER:  match_flag = (reg_syntax&RE_ICASE)?
-                                                        iswalpha (wc):
-                                                        iswupper (wc); break;
+                                                         iswalpha (wc):
+                                                         iswupper (wc); break;
                     case CHAR_CLASS_BLANK:  match_flag = iswblank (wc); break;
                     case CHAR_CLASS_SPACE:  match_flag = iswspace (wc); break;
                     case CHAR_CLASS_PRINT:  match_flag = iswprint (wc); break;
