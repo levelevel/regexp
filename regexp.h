@@ -35,7 +35,7 @@
 
 typedef struct regcomp reg_compile_t;  //コンパイル結果
 
-//エラーコードの定義
+//エラーコードの定義（値はregex関数から流用）
 typedef enum {
     REG_ERR_CODE_OK                       = 0,
     REG_ERR_CODE_NOMATCH                  = 1,
@@ -49,6 +49,8 @@ typedef enum {
     REG_ERR_CODE_INVALID_RANGE_END        = 11,
     REG_ERR_CODE_INVALID_PRECEDING_REGEXP = 13,
     REG_ERR_CODE_REGEXP_TOO_BIG           = 15,
+    //ここからはPCRE2から流用
+    REG_ERR_CODE_UNKNOWN_ESCAPE           = 103,
 } reg_err_code_t;
 
 //エラー情報
@@ -59,6 +61,24 @@ typedef struct {
 
 extern reg_err_info_t reg_err_info; //エラー情報
 extern int reg_syntax;              //syntax
+
+//PCRE2互換
+//PCER2拡張機能を有効にする。
+//\A,\z
+#define RE_PCRE2                          0x08000000
+//'\'による不正なエスケープをエラーとする。
+//指定されていない場合は、次の文字のリテラルとして処理する。
+#define RE_ERROR_UNKNOWN_ESCAPE           0x10000000
+//"a**"のような繰り返し指定の連続をエラーとする。
+#define RE_ERROR_DUP_REPEAT               0x20000000
+//"[a-]"のような-をリテラルとして扱う。
+#define RE_ALLOW_UNBALANCED_MINUS_IN_LIST 0x40000000
+//"a{1b}"のような不正な繰り返し指定を単なるリテラル文字列として扱う。
+#define RE_ALLOW_ILLEGAL_REPEAT           0x80000000
+
+#define RE_SYNTAX_PCRE  ((RE_SYNTAX_POSIX_EXTENDED|\
+   RE_NO_GNU_OPS|RE_PCRE2|RE_ERROR_UNKNOWN_ESCAPE|RE_ERROR_DUP_REPEAT|RE_ALLOW_UNBALANCED_MINUS_IN_LIST|RE_ALLOW_ILLEGAL_REPEAT)\
+   &(~RE_UNMATCHED_RIGHT_PAREN_ORD))
 
 //reg_compileは正規表現regexp（長さlenのバイト列）をコンパイルして、コンパイル結果のポインタを返す。
 //lenに負の値を指定すると、regexpをNUL終端の文字列として処理する。
@@ -87,6 +107,7 @@ reg_compile_t* reg_compile (const char *regexp, size_t len, size_t *nsub, int cf
 // - RE_SYNTAX_POSIX_MINIMAL_BASIC
 // - RE_SYNTAX_POSIX_EXTENDED          # reg_compileでREG_EXTENDEDを指定した場合
 // - RE_SYNTAX_POSIX_MINIMAL_EXTENDED
+// - RE_SYNTAX_PCRE                    # PCRE互換拡張
 //各ビットの詳細は/usr/include/regex.hを参照。ただし定義されているすべての機能を実装しているわけではない。
 reg_compile_t* reg_compile2(const char *regexp, size_t len, size_t *nsub, int cflags, int syntax);
 

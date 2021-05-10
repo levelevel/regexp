@@ -7,7 +7,8 @@
 #define REG_ERE         0x20000             //BRE(GNU)
 #define REG_PCRE2       0x40000             //PCRE2
 #define REG_GNU         (REG_BRE|REG_ERE)   //BRE/ERE共通テスト項目（REG_EXTENDED有無両方でテストする）
-#define REG_EXT         (REG_ERE|REG_PCRE2)
+#define REG_BRE_PCRE2   (REG_BRE|REG_PCRE2)
+#define REG_ERE_PCRE2   (REG_ERE|REG_PCRE2)
 #define REG_ALL         (REG_GNU|REG_PCRE2)
 #define REG_DUMP        0x80000             //強制的にダンプする
 #define REG_CFLAGS_MASK 0xffff
@@ -21,7 +22,7 @@ test_bstr_t bdata[] = {
 int use_gnu_version;
 int use_posix_version;
 
-reg_err_info_t posix_err_info; //エラー情報
+reg_err_info_t ref_err_info; //リファレンス(GNU/PCRE2)のエラー情報
 
 static int test_regexp(test_bstr_t *test_data) {
     int n = test_data->no;
@@ -32,10 +33,13 @@ static int test_regexp(test_bstr_t *test_data) {
     int errcode = 0;
     int ret1 = 0, ret2 = 0; //1:一致、0:不一致、-1:エラー
     int result = 1;         //1:OK, 0:NG
-    memset(&posix_err_info, 0, sizeof(reg_err_info_t));
+    memset(&ref_err_info, 0, sizeof(reg_err_info_t));
     if (tlen==0 && text)   tlen = strlen(text);
     if (rlen==0 && regexp) rlen = strlen(regexp);
-    if ((test_data->eflags&REG_STARTEND) && test_data->end==0) test_data->end = tlen;
+    if ((test_data->eflags&REG_STARTEND)) {
+        if (test_data->end==0) test_data->end = tlen;
+        assert(test_data->end>=test_data->start);
+    }
 
     //regex
     void *void_preg = NULL;
@@ -55,6 +59,7 @@ static int test_regexp(test_bstr_t *test_data) {
             }
             ret1 = gnu_regexec(void_preg, text, tlen, nmatch1, pmatch1, test_data);
         }
+#ifdef REG_ENABLE_PCRE2
     } else {
         errcode = pc_regcomp(&void_preg, regexp, rlen, test_data->cflags&REG_CFLAGS_MASK, test_data->on_syntax, test_data->off_syntax);
         if (errcode!=0) {
@@ -62,14 +67,17 @@ static int test_regexp(test_bstr_t *test_data) {
         } else {
             ret1 = pc_regexec(void_preg, text, tlen, &nmatch1, &pmatch1, test_data);
         }
+#endif
     }
 
     //regexp
     reg_compile_t *preg_compile;
     regmatch_t *pmatch2 = NULL;
     size_t nmatch2 = 0;
-    if (test_data->on_syntax || test_data->off_syntax) {
-        int syntax = ((test_data->cflags & REG_EXTENDED) ? RE_SYNTAX_POSIX_EXTENDED : RE_SYNTAX_POSIX_BASIC);
+    if (test_data->on_syntax || test_data->off_syntax || !use_gnu_version) {
+        int syntax = RE_SYNTAX_POSIX_BASIC;
+        if (!use_gnu_version)                      syntax = RE_SYNTAX_PCRE;
+        else if (test_data->cflags & REG_EXTENDED) syntax = RE_SYNTAX_POSIX_EXTENDED;
         syntax |= test_data->on_syntax;
         syntax &= ~test_data->off_syntax;
         preg_compile = reg_compile2(regexp, rlen, &nmatch2, test_data->cflags&REG_CFLAGS_MASK, syntax);
@@ -86,6 +94,7 @@ static int test_regexp(test_bstr_t *test_data) {
             pmatch2[0].rm_eo = test_data->end;
         }
         ret2 = reg_exec(preg_compile, text, tlen, nmatch2, pmatch2, test_data->eflags);
+        if (ret2 && !use_gnu_version) nmatch2 = 1;
     }
 
     int dump_flag = test_data->cflags&REG_DUMP;
@@ -127,13 +136,16 @@ static int test_regexp(test_bstr_t *test_data) {
     if (result==0 || dump_flag) {
         reg_dump(stdout, preg_compile, 2);
         if (use_gnu_version) gnu_dump(void_preg);
+#ifdef REG_ENABLE_PCRE2
         else                 pc_dump(void_preg);
+#endif
     }
     if (result==0 || (errcode>1 && errcode!=reg_err_info.err_code) || dump_flag ||
-        (errcode && strncmp(posix_err_info.err_msg, reg_err_info.err_msg, 10)!=0)) {
+            (use_gnu_version && errcode && strncmp(ref_err_info.err_msg, reg_err_info.err_msg, 10)!=0)) {
         printf("%d: regex:  regexp='", n);
         reg_print_str(stdout, regexp, rlen);
-        printf("', errcode=%d, %s\n", posix_err_info.err_code, posix_err_info.err_msg);
+        if (use_gnu_version) printf("', errcode=%d, %s\n", errcode, ref_err_info.err_msg);
+        else                 printf("', errcode=%d(%d), %s\n", errcode, ref_err_info.err_code, ref_err_info.err_msg);
         for (int i=0; i<nmatch1; i++) {
             printf("    pmatch1[%d][%d,%d]='", i, pmatch1[i].rm_so, pmatch1[i].rm_eo);
             reg_print_str(stdout, text+pmatch1[i].rm_so, pmatch1[i].rm_eo-pmatch1[i].rm_so);
@@ -152,7 +164,9 @@ static int test_regexp(test_bstr_t *test_data) {
     free(pmatch1);
     free(pmatch2);
     if (use_gnu_version) gnu_free_regex(void_preg);
+#ifdef REG_ENABLE_PCRE2
     else                 pc_free_regex(void_preg);
+#endif
     reg_compile_free(preg_compile);
     preg_compile = NULL;
     return result;
@@ -191,12 +205,14 @@ static int test_bstr(void) {
             if (test_regexp(btest)==0) err_cnt++;
             ere_cnt++;
         }
+#ifdef REG_ENABLE_PCRE2
         if (org_cflags&REG_PCRE2) {
             use_gnu_version = 0;
             use_posix_version = 0;
-            //if (test_regexp(btest)==0) err_cnt++;
-            //pcre2_cnt++;
+            if (test_regexp(btest)==0) err_cnt++;
+            pcre2_cnt++;
         }
+#endif
     }
     printf("%s: %d/%d (BRE=%d, ERE=%d, skip=%d) (posix=%d, gnu=%d, pcre2=%d)\n",
         err_cnt?"FAIL":"PASS", err_cnt?err_cnt:cnt, cnt, bre_cnt, ere_cnt, size-cnt, posix_cnt, gnu_cnt, pcre2_cnt);

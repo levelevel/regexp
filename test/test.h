@@ -12,6 +12,8 @@
 
 #include "../regexp.h"
 
+#define REG_ENABLE_PCRE2    //PCRE2有効化
+
 //テスト項目
 typedef struct {
     int no;                 //テストNo:行番号
@@ -46,7 +48,7 @@ typedef enum {
     REF_PCRE2,          //
 } ref_func_type_t;
 
-extern reg_err_info_t posix_err_info; //エラー情報
+extern reg_err_info_t ref_err_info; //リファレンス(GNU/PCRE2)のエラー情報
 
 extern int use_posix_version;
 

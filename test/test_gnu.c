@@ -1,17 +1,19 @@
 #define USE_GNU
 #include "test.h"
 
+//パターンをコンパイルする。
+//成功時は0、異常時は0以外を返す。
 int gnu_regcomp(void *vpreg, const char *pattern, size_t len, int cflags, int on_syntax, int off_syntax, size_t *nmatch) {
     int ret = 0;
     regex_t *preg = vpreg;
     static char buf[128];
-    posix_err_info.err_code = 0;
-    posix_err_info.err_msg = "";
+    ref_err_info.err_code = 0;
+    ref_err_info.err_msg = "";
     if (use_posix_version) {
         assert(pattern==NULL || strlen(pattern)==len);
         ret = regcomp(preg, pattern, cflags);
-        posix_err_info.err_code = ret;
-        posix_err_info.err_msg = buf;
+        ref_err_info.err_code = ret;
+        ref_err_info.err_msg = buf;
         regerror(ret, preg, buf, sizeof(buf));
     } else {
         int syntax = ((cflags & REG_EXTENDED) ? RE_SYNTAX_POSIX_EXTENDED : RE_SYNTAX_POSIX_BASIC);
@@ -34,8 +36,8 @@ int gnu_regcomp(void *vpreg, const char *pattern, size_t len, int cflags, int on
 
         if (err_str) {
             //printf("pattern='%s' :%s\n", pattern, err_str);
-            posix_err_info.err_code = 1;
-            posix_err_info.err_msg = err_str;
+            ref_err_info.err_code = 1;
+            ref_err_info.err_msg = err_str;
             ret = 1;
         }
 
