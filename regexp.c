@@ -15,10 +15,12 @@
 //              | "(" reg_exp ")"                                               ERE
 //              | "\" ( "1" | ... | "9" )                                   BRE/ERE
 //              | "^" | "$"                                                     ERE
-//              | "\w" | "\W"                                               GNU
-//              | "\s" | "\S"                                               GNU
+//              | "\A" | "\z"                                                   PCRE
+//              | "\w" | "\W"                                               GNU/PCRE
+//              | "\s" | "\S"                                               GNU/PCRE
+//              | "\d" | "^D"                                                   PCRE
 //              | "\<" | "\>"                                               GNU
-//              | "\b" | "\B"                                               GNU
+//              | "\b" | "\B"                                               GNU/PCRE
 //              | "\`" | "\'"                                               GNU
 // char_set     = char char_set*                                            BRE/ERE
 //              | char "-" char
@@ -285,6 +287,7 @@ static reg_stat_t new_char_set(reg_compile_t *preg_compile);
 static reg_stat_t new_char_set_ext(reg_compile_t *preg_compile);
 static void set_alpha(char_set_t *char_set);
 static void set_alnum(char_set_t *char_set);
+static void set_digit(char_set_t *char_set);
 static void set_punct(char_set_t *char_set);
 static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_set);
 static reg_stat_t new_subreg  (reg_compile_t *preg_compile);
@@ -560,12 +563,13 @@ static reg_stat_t repeat_exp(reg_compile_t *preg_compile) {
 //              | "\(" reg_exp "\)"                                         BRE
 //              | "(" reg_exp ")"                                               ERE
 //              | "\" ( "1" | ... | "9" )                                   BRE
-//              | "^"                                                           ERE
-//              | "$"                                                           ERE
-//              | "\w" | "\W"                                               GNU
-//              | "\s" | "\S"                                               GNU
+//              | "^"  | "$"                                                    ERE
+//              | "\A" | "\z"                                                   PCRE
+//              | "\w" | "\W"                                               GNU/PCRE
+//              | "\s" | "\S"                                               GNU/PCRE
+//              | "\d" | "^D"                                                   PCRE
 //              | "\<" | "\>"                                               GNU
-//              | "\b" | "\B"                                               GNU
+//              | "\b" | "\B"                                               GNU/PCRE
 //              | "\`" | "\'"                                               GNU
 static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
     pattern_t *pat = NULL;
@@ -608,9 +612,14 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
             return REG_END;
         } else if (token1_is(preg_compile->p, '\\')) {
             preg_compile->p++;
-            if ((!(reg_syntax&RE_NO_GNU_OPS) || (reg_syntax&RE_PCRE2))&&
+            if (!(reg_syntax&RE_NO_GNU_OPS) &&
                 (token1_is(preg_compile->p, 'w') || token1_is(preg_compile->p, 'W') ||
                  token1_is(preg_compile->p, 's') || token1_is(preg_compile->p, 'S'))) {
+                return new_char_set_ext(preg_compile);
+            } else if ((reg_syntax&RE_PCRE2) &&
+                (token1_is(preg_compile->p, 'w') || token1_is(preg_compile->p, 'W') ||
+                 token1_is(preg_compile->p, 's') || token1_is(preg_compile->p, 'S') ||
+                 token1_is(preg_compile->p, 'd') || token1_is(preg_compile->p, 'D'))) {
                 return new_char_set_ext(preg_compile);
             } else if (!(reg_syntax&RE_NO_GNU_OPS) && token1_is(preg_compile->p, '<')) {
                 pat = new_pattern(PAT_WORD_FIRST);
@@ -910,6 +919,7 @@ static reg_stat_t new_char_set(reg_compile_t *preg_compile) {
     return REG_OK;
 }
 
+//"\w"等に対応した文字セットを登録する。
 static reg_stat_t new_char_set_ext(reg_compile_t *preg_compile) {
     pattern_t *pat = new_pattern(PAT_CHARSET);
     char_set_t *char_set;
@@ -941,7 +951,18 @@ static reg_stat_t new_char_set_ext(reg_compile_t *preg_compile) {
         push_char_set_str(char_set, " \t\n\r\f\v");
         push_char_set_class(char_set, CHAR_CLASS_SPACE);
         break;
+    case 'd':           //[[:digit:]]
+        set_digit(char_set);
+        push_char_set_class(char_set, CHAR_CLASS_DIGIT);
+        break;
+    case 'D':           //[^[:digit:]]
+        char_set->reverse = 1;
+        memset(char_set->chars, 1, 256);
+        set_digit(char_set);
+        push_char_set_class(char_set, CHAR_CLASS_DIGIT);
+        break;
     default:
+        free(char_set);
         return REG_ERR;
     }
     push_pattern(preg_compile, pat);
@@ -954,6 +975,9 @@ static void set_alpha(char_set_t *char_set) {
 }
 static void set_alnum(char_set_t *char_set) {
     set_alpha(char_set);
+    set_digit(char_set);
+}
+static void set_digit(char_set_t *char_set) {
     for (int c='0'; c<='9'; c++) push_char_set(char_set, c);
 }
 static void set_punct(char_set_t *char_set) {
@@ -993,7 +1017,7 @@ static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_s
         push_char_set_class(char_set, CHAR_CLASS_ALNUM);
         regexp += 5;
     } else if (strncmp(regexp, "digit", 5)==0) {
-        for (int c='0'; c<='9'; c++) push_char_set(char_set, c);
+        set_digit(char_set);
         push_char_set_class(char_set, CHAR_CLASS_DIGIT);
         regexp += 5;
     } else if (strncmp(regexp, "xdigit", 6)==0) {

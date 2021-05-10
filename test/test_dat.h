@@ -297,15 +297,17 @@
     {__LINE__, {"abcXYZ123_"},  {"[[:alpha:]]*"},   {{"abcXYZ"}},           1, 0, REG_ALL},
     {__LINE__, {"abcXYZ123_"},  {"[[:alnum:]]*"},   {{"abcXYZ123"}},        1, 0, REG_ALL},
     {__LINE__, {"<>[]_ aX1"},   { "[^[:alnum:]]*"}, {{"<>[]_ "}},           1, 0, REG_ALL},
-    {__LINE__, {"abcXYZ123_"},  {"\\w*"},           {{"abcXYZ123_"}},       1, 0, REG_ALL}, //GNU
-    {__LINE__, {"!$abc"},       {"\\W*"},           {{"!$"}},               1, 0, REG_ALL}, //GNU
+    {__LINE__, {"abcXYZ123_"},  {"\\w*"},           {{"abcXYZ123_"}},       1, 0, REG_ALL}, //GNU,PCRE
+    {__LINE__, {"!$abc"},       {"\\W*"},           {{"!$"}},               1, 0, REG_ALL}, //GNU,PCRE
     {__LINE__, {"x123ABCdefx"}, {"x[[:digit:]]*"},  {{"x123"}},             1, 0, REG_ALL},
+    {__LINE__, {"x123ABCdefx"}, {"x\\d*"},          {{"x123"}},             1, 0, REG_PCRE2},//PCRE
+    {__LINE__, {"x123ABCdefx"}, {"\\D{3}"},         {{"ABC"}},              1, 0, REG_PCRE2},//PCRE
     {__LINE__, {"x123ABCdefx"}, {"x[[:xdigit:]]*"}, {{"x123ABCdef"}},       1, 0, REG_ALL},
     {__LINE__, {"[:-+a]"},      {"[[:punct:]]*"},   {{"[:-+"}},             1, 0, REG_ALL},
     {__LINE__, {" \tz"},        {"[[:blank:]]*"},   {{" \t"}},              1, 0, REG_ALL},
     {__LINE__, {" \t\n\r\f\vz"},{"[[:space:]]*"},   {{" \t\n\r\f\v"}},      1, 0, REG_ALL},
-    {__LINE__, {" \t\n\r\f\vz"},{"\\s*"},           {{" \t\n\r\f\v"}},      1, 0, REG_ALL}, //GNU
-    {__LINE__, {"abc123 "},     {"\\S*"},           {{"abc123"}},           1, 0, REG_ALL}, //GNU
+    {__LINE__, {" \t\n\r\f\vz"},{"\\s*"},           {{" \t\n\r\f\v"}},      1, 0, REG_ALL}, //GNU,PCER
+    {__LINE__, {"abc123 "},     {"\\S*"},           {{"abc123"}},           1, 0, REG_ALL}, //GNU,PCER
     {__LINE__, {"\01\177"},     {"[[:cntrl:]]*"},   {{"\01\177"}},          1, 0, REG_ALL},
     {__LINE__, {"abc \t"},      {"[[:graph:]]*"},   {{"abc"}},              1, 0, REG_ALL},
     {__LINE__, {"abc \t"},      {"[[:print:]]*"},   {{"abc "}},             1, 0, REG_ALL},
@@ -496,7 +498,7 @@
     {__LINE__, {"zσａあ"},     {"[[:upper:]]+"},   {{"zσａあ"}},          1, 0, REG_ERE      |REG_ICASE},
 //  {__LINE__, {"zσａあ"},     {"[[:upper:]]+"},   {{"zσａあ"}},          1, 0, REG_PCRE2    |REG_ICASE},
     {__LINE__, {"aBβΣｂＺっ"},{"[[:lower:]]+"},   {{"aBβΣｂＺっ"}},     1, 0, REG_ERE      |REG_ICASE},
-    {__LINE__, {"aBβΣｂＺっ"},{"[[:lower:]]+"},   {{"a"}},                1, 0, REG_PCRE2    |REG_ICASE},
+//  {__LINE__, {"aBβΣｂＺっ"},{"[[:lower:]]+"},   {{"a"}},                1, 0, REG_PCRE2    |REG_ICASE},
 #endif
 
 //  {__LINE__, {"a"},           {"[^a]"},           {{""}},                 1, 1, REG_ERE_PCRE2|REG_DUMP},   //dumpテスト
