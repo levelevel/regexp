@@ -240,7 +240,7 @@ typedef struct {
         char_set_t *cset;   //type=PAT_CHARSET
         struct {
             int min, max;   //type=PAT_REPEAT
-            char lazy;      //0:最大マッチ(greedy)、1:最小マッチ
+            enum {REP_GREEDY=0, REP_POSEESSIVE, REP_LAZY} rep_mode;
         };
         reg_compile_t *regcomp; //type=PAT_SUBREG
         int ref_num;        //type=PAT_BACKREF, 1-9
@@ -530,9 +530,14 @@ static reg_stat_t repeat_exp(reg_compile_t *preg_compile) {
             }
             push_pattern(preg_compile, pat);
             preg_compile->p++;
-            if (reg_syntax&RE_PCRE2 && !token_is_end(preg_compile->p) && token1_is(preg_compile->p, '?')) {
-                pat->lazy = 1;
-                preg_compile->p++;
+            if (reg_syntax&RE_PCRE2 && !token_is_end(preg_compile->p)) {
+                if (token1_is(preg_compile->p, '?')) {          //"*?", "+?", "??"
+                    pat->rep_mode = REP_LAZY;
+                    preg_compile->p++;
+                } else if (token1_is(preg_compile->p, '+')) {   //"*+", "++", "?+"
+                    pat->rep_mode = REP_POSEESSIVE;
+                    preg_compile->p++;
+                }
             }
             if ((reg_syntax&RE_CONTEXT_INDEP_OPS)) continue;
         } else if (token_is_open_brace(preg_compile->p)) {  //'{' or '\{'
@@ -783,9 +788,14 @@ static reg_stat_t new_repeat(reg_compile_t *preg_compile) {
     pattern_t *pat = new_pattern(PAT_REPEAT);
     pat->min = min;
     pat->max = max;
-    if (reg_syntax&RE_PCRE2 && !token_is_end(regexp) && token1_is(regexp, '?')) {
-        pat->lazy = 1;
-        regexp++;
+    if (reg_syntax&RE_PCRE2 && !token_is_end(regexp)) {
+        if (token1_is(regexp, '?')) {          //"{n,m}?"
+            pat->rep_mode = REP_LAZY;
+            regexp++;
+        } else if (token1_is(regexp, '+')) {   //"{n,m}+"
+            pat->rep_mode = REP_POSEESSIVE;
+            regexp++;
+        }
     }
     push_pattern(preg_compile, pat);
     preg_compile->p = regexp;
@@ -1205,14 +1215,26 @@ static int reg_match_repeat(reg_compile_t *preg_compile, pattern_t **pat, const 
     int ret = 0;
     int match_len;
 
-    do {    /* a \{0,n\} matches zero or more instances */
-        if (cnt++>=rep->min && reg_match_here(preg_compile, pat+2, text, rm_ep)) {
-            ret = 1;
-            if (rep->lazy) break;   //最短一致
+    if (rep->rep_mode==REP_POSEESSIVE) {    //バックトラックしない
+        //繰り返しを最大限マッチさせてから後続のマッチ処理を行う。
+        while (cnt<rep->max && reg_match_pat(preg_compile, c, text, &match_len)) {
+            text += match_len;  //マッチした文字だけtextを進めて次の処理を行う
+            cnt++;
         }
-    } while (reg_match_pat(preg_compile, c, text, &match_len) &&
-             (text+=match_len) &&   //マッチした文字だけtextを進めて次の処理を行う
-              cnt<=rep->max);
+        if (cnt>=rep->min && reg_match_here(preg_compile, pat+2, text, rm_ep)) ret = 1;
+    } else {                                //バックトラックする
+        //0回の繰り返しマッチ&&後続マッチ->1回の繰り返し&&後続マッチ->...を続けていって、
+        //REP_GREEDY: 最後にマッチしたものを採用（最長マッチ）
+        //REP_LAZY:   最後にマッチしたものを採用（最短マッチ）
+        do {    /* a \{0,n\} matches zero or more instances */
+            if (cnt++>=rep->min && reg_match_here(preg_compile, pat+2, text, rm_ep)) {
+                ret = 1;
+                if (rep->rep_mode==REP_LAZY) break; //最短一致
+            }
+        } while (reg_match_pat(preg_compile, c, text, &match_len) &&
+                (text+=match_len) &&   //マッチした文字だけtextを進めて次の処理を行う
+                cnt<=rep->max);
+    }
 
     return ret;
 }
@@ -1632,6 +1654,7 @@ static void reg_print_char_set(FILE *fp, char_set_t *char_set) {
 
 //reg_dump: dump compiled regexp
 void reg_dump(FILE *fp, reg_compile_t *preg_compile, int indent) {
+    static const char* rep_mode_tbl[] = {"", "+", "?"};    //greedy, possessive, lazy
     fprintf(stderr, "%*s", indent, ""); // indent個の空白を出力
     if (preg_compile==NULL) {
         fprintf(stderr, "preg_compile=(nul)\n");
@@ -1697,7 +1720,7 @@ void reg_dump(FILE *fp, reg_compile_t *preg_compile, int indent) {
 #endif //REG_ENABLE_UTF8
             fprintf(fp, "]\n");
             break;
-        case PAT_REPEAT:  fprintf(fp, "{%d,%d}%s\n", pat->min, pat->max, pat->lazy?"?":""); break;
+        case PAT_REPEAT:  fprintf(fp, "{%d,%d}%s\n", pat->min, pat->max, rep_mode_tbl[pat->rep_mode]); break;
         case PAT_SUBREG:  fprintf(fp, "\n");
                           reg_dump(fp, pat->regcomp, indent+2); break;
         case PAT_BACKREF: fprintf(fp, "\\%d\n", pat->ref_num); break;
