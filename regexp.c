@@ -240,6 +240,7 @@ typedef struct {
         char_set_t *cset;   //type=PAT_CHARSET
         struct {
             int min, max;   //type=PAT_REPEAT
+            char lazy;      //0:最大マッチ(greedy)、1:最小マッチ
         };
         reg_compile_t *regcomp; //type=PAT_SUBREG
         int ref_num;        //type=PAT_BACKREF, 1-9
@@ -293,10 +294,10 @@ static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_s
 static reg_stat_t new_subreg  (reg_compile_t *preg_compile);
 
 static int reg_exec_main(reg_compile_t *preg_compile, const char *text, int *match_len);
-static int reg_match_here(reg_compile_t *preg_compile, pattern_t **pat, const char *text, const char **rm_ep);
 static int set_match(reg_compile_t *preg_compile, const char *rm_sp, const char *rm_ep);
-static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char *text, int *match_len);
+static int reg_match_here(reg_compile_t *preg_compile, pattern_t **pat, const char *text, const char **rm_ep);
 static int reg_match_repeat(reg_compile_t *preg_compile, pattern_t **pat, const char *text, const char **rm_ep);
+static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char *text, int *match_len);
 static void reg_pattern_free(pattern_t *pat);
 static void reg_set_err(reg_err_code_t err_code);
 
@@ -431,6 +432,7 @@ static reg_compile_t *reg_exp(const char *regexp, pattern_type_t mode) {
             //親を作り、以後この下にSUBREGを追加する
             preg_compile = new_reg_compile();
             preg_compile->regexp = preg_compile->p = regexp;
+            preg_compile->rlen = g_regexp_end - regexp;
             preg_compile->regexp_len = g_regexp_end-regexp;
             preg_compile->mode = mode;
             preg_compile->backref_flags = subreg->backref_flags;
@@ -468,6 +470,7 @@ static reg_compile_t *reg_exp(const char *regexp, pattern_type_t mode) {
 static reg_compile_t *sequence_exp(const char *regexp, pattern_type_t mode) {
     reg_compile_t *preg_compile = new_reg_compile();
     preg_compile->regexp = preg_compile->p = regexp;
+    preg_compile->rlen = g_regexp_end - regexp;
     preg_compile->regexp_len = g_regexp_end-regexp;
     preg_compile->mode = mode;
     reg_stat_t ret = REG_OK;
@@ -527,6 +530,10 @@ static reg_stat_t repeat_exp(reg_compile_t *preg_compile) {
             }
             push_pattern(preg_compile, pat);
             preg_compile->p++;
+            if (reg_syntax&RE_PCRE2 && !token_is_end(preg_compile->p) && token1_is(preg_compile->p, '?')) {
+                pat->lazy = 1;
+                preg_compile->p++;
+            }
             if ((reg_syntax&RE_CONTEXT_INDEP_OPS)) continue;
         } else if (token_is_open_brace(preg_compile->p)) {  //'{' or '\{'
             if (reg_syntax&RE_ERROR_DUP_REPEAT) {
@@ -753,6 +760,7 @@ static reg_stat_t new_repeat(reg_compile_t *preg_compile) {
         }
     }
     if ((mode<3 || mode==10 || min<0) && (reg_syntax&RE_ALLOW_ILLEGAL_REPEAT)) {
+        //不正な構文の場合、全体をリテラルとする。
         for (; *preg_compile->p; preg_compile->p++) {
             pattern_t *pat = new_pattern(PAT_CHAR);
             pat->c = *preg_compile->p;
@@ -775,6 +783,10 @@ static reg_stat_t new_repeat(reg_compile_t *preg_compile) {
     pattern_t *pat = new_pattern(PAT_REPEAT);
     pat->min = min;
     pat->max = max;
+    if (reg_syntax&RE_PCRE2 && !token_is_end(regexp) && token1_is(regexp, '?')) {
+        pat->lazy = 1;
+        regexp++;
+    }
     push_pattern(preg_compile, pat);
     preg_compile->p = regexp;
     return REG_OK;
@@ -1184,6 +1196,27 @@ static int reg_match_here(reg_compile_t *preg_compile, pattern_t **pat, const ch
     return 0;
 }
 
+// reg_match_repeat: search for c\{m,n\} regexp at beginning of text
+static int reg_match_repeat(reg_compile_t *preg_compile, pattern_t **pat, const char *text, const char **rm_ep) {
+    pattern_t *rep = pat[0];
+    pattern_t *c   = pat[1];
+    assert(rep->type==PAT_REPEAT);
+    int cnt = 0;    //繰り返しマッチ回数
+    int ret = 0;
+    int match_len;
+
+    do {    /* a \{0,n\} matches zero or more instances */
+        if (cnt++>=rep->min && reg_match_here(preg_compile, pat+2, text, rm_ep)) {
+            ret = 1;
+            if (rep->lazy) break;   //最短一致
+        }
+    } while (reg_match_pat(preg_compile, c, text, &match_len) &&
+             (text+=match_len) &&   //マッチした文字だけtextを進めて次の処理を行う
+              cnt<=rep->max);
+
+    return ret;
+}
+
 // reg_match_pat: 1個のパターンがマッチするかを判定
 // match_lenにはpatでマッチしたtextの長さを設定して返す。
 static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char *text, int *match_len) {
@@ -1401,24 +1434,6 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
         assert(0);
     }
     return 0;
-}
-
-// reg_match_repeat: search for c\{m,n\} regexp at beginning of text
-static int reg_match_repeat(reg_compile_t *preg_compile, pattern_t **pat, const char *text, const char **rm_ep) {
-    pattern_t *rep = pat[0];
-    pattern_t *c   = pat[1];
-    assert(rep->type==PAT_REPEAT);
-    int cnt = 0;    //繰り返しマッチ回数
-    int ret = 0;
-    int match_len;
-
-    do {    /* a \{0,n\} matches zero or more instances */
-        if (cnt++>=rep->min && reg_match_here(preg_compile, pat+2, text, rm_ep)) ret = 1;   //最短一致ならここでreturn 1する
-    } while (reg_match_pat(preg_compile, c, text, &match_len) &&
-             (text+=match_len) &&   //マッチした文字だけtextを進めて次の処理を行う
-              cnt<=rep->max);
-
-    return ret;
 }
 
 void reg_compile_free(reg_compile_t* preg_compile) {
@@ -1682,7 +1697,7 @@ void reg_dump(FILE *fp, reg_compile_t *preg_compile, int indent) {
 #endif //REG_ENABLE_UTF8
             fprintf(fp, "]\n");
             break;
-        case PAT_REPEAT:  fprintf(fp, "{%d,%d}\n", pat->min, pat->max); break;
+        case PAT_REPEAT:  fprintf(fp, "{%d,%d}%s\n", pat->min, pat->max, pat->lazy?"?":""); break;
         case PAT_SUBREG:  fprintf(fp, "\n");
                           reg_dump(fp, pat->regcomp, indent+2); break;
         case PAT_BACKREF: fprintf(fp, "\\%d\n", pat->ref_num); break;

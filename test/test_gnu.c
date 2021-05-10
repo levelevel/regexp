@@ -49,7 +49,7 @@ int gnu_regcomp(void *vpreg, const char *pattern, size_t len, int cflags, int on
     return ret;
 }
 
-int gnu_regexec(void *vpreg, const char *string, size_t len, size_t nmatch, regmatch_t pmatch[], test_bstr_t *test) {
+int gnu_regexec(void *vpreg, const char *string, size_t len, size_t nmatch, regmatch_t pmatch[], test_t *test) {
     int ret = 0;
     regex_t *preg = vpreg;
     if (use_posix_version) {

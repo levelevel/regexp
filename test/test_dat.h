@@ -1,4 +1,4 @@
-//test_str_t data[] = {
+//test_t test_tbl[] = {
 //   no.        text,tlen,       regexp,rlen,        {bstr,len},...         nmatch,expect,cflags,eflags,on_syntax,off_syntax,{start,end}
     {__LINE__, {"abc"},         {"a"},              {{"a"}},                1, 0, REG_ALL},
     {__LINE__, {"abc"},         {"b"},              {{"b"}},                1, 0, REG_ALL},
@@ -43,6 +43,22 @@
     {__LINE__, {"abc"},         {"a*$"},            {{""}},                 1, 0, REG_ALL},
     {__LINE__, {"aaabbbccc"},   {"aaaa*"},          {{"aaa"}},              1, 0, REG_ALL},
     {__LINE__, {"aaabbbccc"},   {"ab*"},            {{"a"}},                1, 0, REG_ALL},
+
+//  greedy
+    {__LINE__, {"abbb"},        {"ab*"},            {{"abbb"}},             1, 0, REG_ALL},
+    {__LINE__, {"abbb"},        {"ab+"},            {{"abbb"}},             1, 0, REG_ERE_PCRE2},
+    {__LINE__, {"abbb"},        {"ab?"},            {{"ab"}},               1, 0, REG_ERE_PCRE2},
+    {__LINE__, {"abbb"},        {"ab{2,3}"},        {{"abbb"}},             1, 0, REG_ERE_PCRE2},
+    {__LINE__, {"cat!"},        {".*!"},            {{"cat!"}},             1, 0, REG_ERE_PCRE2},
+    {__LINE__, {"cat!"},        {".*!"},            {{"cat!"}},             1, 0, REG_ERE_PCRE2},
+//  lazy
+    {__LINE__, {"abbb"},        {"ab*?"},           {{"a"}},                1, 0, REG_PCRE2},
+    {__LINE__, {"abbb"},        {"ab+?"},           {{"ab"}},               1, 0, REG_PCRE2},
+    {__LINE__, {"abbb"},        {"ab??"},           {{"a"}},                1, 0, REG_PCRE2},
+    {__LINE__, {"abbb"},        {"ab{2,3}?"},       {{"abb"}},              1, 0, REG_PCRE2},
+    {__LINE__, {"cat!"},        {".*?!"},           {{"cat!"}},             1, 0, REG_PCRE2},
+//  possessive
+//    {__LINE__, {"cat!"},        {".*+!"},           {{""}},                 1, 1, REG_PCRE2},
 
     {__LINE__, {"abc"},         {"."},              {{"a"}},                1, 0, REG_ALL},
     {__LINE__, {"abc"},         {".."},             {{"ab"}},               1, 0, REG_ALL},

@@ -45,7 +45,7 @@ int pc_regcomp(void **vpreg, const char *pattern, size_t len, int cflags, int on
     return ret;
 }
 
-int pc_regexec(void *preg, const char *string, size_t len, size_t *nmatch, regmatch_t **pmatch, test_bstr_t *test) {
+int pc_regexec(void *preg, const char *string, size_t len, size_t *nmatch, regmatch_t **pmatch, test_t *test) {
     int ret = 0;
     pcre2_code_8 *pcode = preg;
     pcre2_match_data_8 *match_data;
