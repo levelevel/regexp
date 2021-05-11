@@ -333,6 +333,8 @@
     {__LINE__, {"x123ABCdefx"}, {"x[[:digit:]]*"},  {{"x123"}},             1, 0, REG_ALL},
     {__LINE__, {"x123ABCdefx"}, {"x\\d*"},          {{"x123"}},             1, 0, REG_PCRE2},//PCRE
     {__LINE__, {"x123ABCdefx"}, {"\\D{3}"},         {{"ABC"}},              1, 0, REG_PCRE2},//PCRE
+    {__LINE__, {"a\ra \t　c"},  {"a\\h+"},          {{"a \t　"}},           1, 0, REG_PCRE2},//PCRE
+    {__LINE__, {"a aあ\tc"},    {"\\h\\H+\\h"},     {{" aあ\t"}},           1, 0, REG_PCRE2},//PCRE
     {__LINE__, {"x123ABCdefx"}, {"x[[:xdigit:]]*"}, {{"x123ABCdef"}},       1, 0, REG_ALL},
     {__LINE__, {"[:-+a]"},      {"[[:punct:]]*"},   {{"[:-+"}},             1, 0, REG_ALL},
     {__LINE__, {" \tz"},        {"[[:blank:]]*"},   {{" \t"}},              1, 0, REG_ALL},
@@ -530,6 +532,9 @@
 //  {__LINE__, {"zσａあ"},     {"[[:upper:]]+"},   {{"zσａあ"}},          1, 0, REG_PCRE2    |REG_ICASE},
     {__LINE__, {"aBβΣｂＺっ"},{"[[:lower:]]+"},   {{"aBβΣｂＺっ"}},     1, 0, REG_ERE      |REG_ICASE},
 //  {__LINE__, {"aBβΣｂＺっ"},{"[[:lower:]]+"},   {{"a"}},                1, 0, REG_PCRE2    |REG_ICASE},
+
+    {__LINE__, {"x12３ABＣdefx"}, {"x\\d*"},        {{"x12３"}},            1, 0, REG_PCRE2},//PCRE
+    {__LINE__, {"x12３ABＣdefx"}, {"\\D{3}"},       {{"ABＣ"}},             1, 0, REG_PCRE2},//PCRE
 #endif
 
 //  {__LINE__, {"a"},           {"[^a]"},           {{""}},                 1, 1, REG_ERE_PCRE2|REG_DUMP},   //dumpテスト
