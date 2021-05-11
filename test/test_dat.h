@@ -335,6 +335,9 @@
     {__LINE__, {"x123ABCdefx"}, {"\\D{3}"},         {{"ABC"}},              1, 0, REG_PCRE2},//PCRE
     {__LINE__, {"a\ra \t　c"},  {"a\\h+"},          {{"a \t　"}},           1, 0, REG_PCRE2},//PCRE
     {__LINE__, {"a aあ\tc"},    {"\\h\\H+\\h"},     {{" aあ\t"}},           1, 0, REG_PCRE2},//PCRE
+    {__LINE__, {"a\r\n b"},     {"\\R+"},           {{"\r\n"}},             1, 0, REG_PCRE2},//PCRE
+    {__LINE__, {"\n ab"},       {"\\N+"},           {{" ab"}},              1, 0, REG_PCRE2},//PCRE
+
     {__LINE__, {"x123ABCdefx"}, {"x[[:xdigit:]]*"}, {{"x123ABCdef"}},       1, 0, REG_ALL},
     {__LINE__, {"[:-+a]"},      {"[[:punct:]]*"},   {{"[:-+"}},             1, 0, REG_ALL},
     {__LINE__, {" \tz"},        {"[[:blank:]]*"},   {{" \t"}},              1, 0, REG_ALL},

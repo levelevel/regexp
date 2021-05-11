@@ -22,6 +22,7 @@
 //              | "\s" | "\S"                                               GNU/PCRE
 //              | "\d" | "^D"                                                   PCRE
 //              | "\h" | "^H"                                                   PCRE
+//              | "\R" | "\N"                                                   PCRE
 //              | "\<" | "\>"                                               GNU
 //              | "\b" | "\B"                                               GNU/PCRE
 //              | "\`" | "\'"                                               GNU
@@ -317,6 +318,7 @@ static const char* g_regexp_end;//regexpの末尾の次の位置
 
 #define token1_is(p, c)     (*(p)==c)
 #define token2_is(p, str)   (memcmp(p, str, 2)==0)
+#define token1_in(p, str)   (strchr(str,*(p)))
 
 #define token_is_open_brace(p)  ((reg_syntax&RE_NO_BK_BRACES) ? token1_is(p, '{') : token2_is(p, "\\{"))
 #define token_is_close_brace(p) ((reg_syntax&RE_NO_BK_BRACES) ? token1_is(p, '}') : token2_is(p, "\\}"))
@@ -588,6 +590,7 @@ static reg_stat_t repeat_exp(reg_compile_t *preg_compile) {
 //              | "\s" | "\S"                                               GNU/PCRE
 //              | "\d" | "^D"                                                   PCRE
 //              | "\h" | "^H"                                                   PCRE
+//              | "\R" | "\N"                                                   PCRE
 //              | "\<" | "\>"                                               GNU
 //              | "\b" | "\B"                                               GNU/PCRE
 //              | "\`" | "\'"                                               GNU
@@ -632,15 +635,8 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
             return REG_END;
         } else if (token1_is(preg_compile->p, '\\')) {
             preg_compile->p++;
-            if (!(reg_syntax&RE_NO_GNU_OPS) &&
-                (token1_is(preg_compile->p, 'w') || token1_is(preg_compile->p, 'W') ||
-                 token1_is(preg_compile->p, 's') || token1_is(preg_compile->p, 'S'))) {
-                return new_char_set_ext(preg_compile);
-            } else if ((reg_syntax&RE_PCRE2) &&
-                (token1_is(preg_compile->p, 'w') || token1_is(preg_compile->p, 'W') ||
-                 token1_is(preg_compile->p, 's') || token1_is(preg_compile->p, 'S') ||
-                 token1_is(preg_compile->p, 'd') || token1_is(preg_compile->p, 'D') ||
-                 token1_is(preg_compile->p, 'h') || token1_is(preg_compile->p, 'H'))) {
+            if ((!(reg_syntax&RE_NO_GNU_OPS)  && token1_in(preg_compile->p, "wWsS")) ||
+                ( (reg_syntax&RE_PCRE2)       && token1_in(preg_compile->p, "wWsSdDhHRN"))) {
                 return new_char_set_ext(preg_compile);
             } else if (!(reg_syntax&RE_NO_GNU_OPS) && token1_is(preg_compile->p, '<')) {
                 pat = new_pattern(PAT_WORD_FIRST);
@@ -1009,6 +1005,14 @@ static reg_stat_t new_char_set_ext(reg_compile_t *preg_compile) {
         memset(char_set->chars, 1, 256);
         push_char_set_str(char_set, " \t");
         push_char_set_wc(char_set, L'　');  //#Unicodeには簡易対応
+        break;
+    case 'R':           //[\n\r]    //PCRE
+        push_char_set_str(char_set, "\n\r");
+        break;
+    case 'N':           //[^\n\r]   //PCRE
+        char_set->reverse = 1;
+        memset(char_set->chars, 1, 256);
+        push_char_set_str(char_set, "\n");  //'\r'は含まない？
         break;
     default:
         free(char_set);
