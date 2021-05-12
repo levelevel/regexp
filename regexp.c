@@ -26,6 +26,9 @@
 //              | "\<" | "\>"                                               GNU
 //              | "\b" | "\B"                                               GNU/PCRE
 //              | "\`" | "\'"                                               GNU
+//              | "\a" | "\e" | "\f" | "\n" | "\r" | "\t"                       PCRE
+//              | "\cx" | "\0dd" | "\ddd" | "\o{ddd..}"                         PCRE
+//              | "\N{U+hh.}" |"\xhh" | "\x{hh..}"                              PCRE
 // char_set     = char char_set*                                            BRE/ERE
 //              | char "-" char
 //              | "[:" char_class ":]"
@@ -287,15 +290,18 @@ static reg_compile_t *reg_exp     (const char *regexp, pattern_type_t mode);
 static reg_compile_t *sequence_exp(const char *regexp, pattern_type_t mode);
 static reg_stat_t repeat_exp  (reg_compile_t *preg_compile);
 static reg_stat_t primary_exp (reg_compile_t *preg_compile);
-static reg_stat_t new_repeat  (reg_compile_t *preg_compile);
-static reg_stat_t new_char_set(reg_compile_t *preg_compile);
-static reg_stat_t new_char_set_ext(reg_compile_t *preg_compile);
+static reg_stat_t set_backref(reg_compile_t *preg_compile);
+static reg_stat_t set_subreg  (reg_compile_t *preg_compile);
+static reg_stat_t set_repeat  (reg_compile_t *preg_compile);
+static reg_stat_t set_char_set(reg_compile_t *preg_compile);
+static reg_stat_t set_char_set_ext(reg_compile_t *preg_compile);
 static void set_alpha(char_set_t *char_set);
 static void set_alnum(char_set_t *char_set);
 static void set_digit(char_set_t *char_set);
 static void set_punct(char_set_t *char_set);
 static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_set);
-static reg_stat_t new_subreg  (reg_compile_t *preg_compile);
+static reg_stat_t set_escape_char(reg_compile_t *preg_compile);
+static int get_escape_char(reg_compile_t *preg_compile, int enable_backref);
 
 static int reg_exec_main(reg_compile_t *preg_compile, const char *text, int *match_len);
 static int set_match(reg_compile_t *preg_compile, const char *rm_sp, const char *rm_ep);
@@ -327,6 +333,10 @@ static const char* g_regexp_end;//regexpの末尾の次の位置
 #define token_is_plus(p)       (!(reg_syntax&RE_BK_PLUS_QM)   ? token1_is(p, '+') : token2_is(p, "\\+"))
 #define token_is_question(p)   (!(reg_syntax&RE_BK_PLUS_QM)   ? token1_is(p, '?') : token2_is(p, "\\?"))
 #define token_is_vbar(p)        ((reg_syntax&RE_NO_BK_VBAR)   ? token1_is(p, '|') : token2_is(p, "\\|"))
+#define token_is_octal(p)       ((*p)>='0' && (*p)<='7')
+#define token_is_digit(p)       isdigit(*(p))
+#define token_is_xdigit(p)      isxdigit(*(p))
+#define token_len(p)            (g_regexp_end-(p))
 
 // reg_compile: compile regexp
 // reg_exp      = sequence_exp ( "|" sequence_exp )*                            ERE
@@ -469,10 +479,6 @@ static reg_compile_t *reg_exp(const char *regexp, pattern_type_t mode) {
 }
 
 // sequence_exp = repeat_exp*                                                   BRE/ERE
-// repeat_exp   = primary_exp ( "*" | "\+" | "\?" | "\{" repeat_range "\}" )?   BRE
-//              | repeat_exp ( "*" | "+" | "?" | "{" repeat_range "}" )?            ERE
-//              | repeat_exp ( "*?" | "+?" | "??" | "{" repeat_range "}?" )?        PCRE
-//              | repeat_exp ( "*+" | "++" | "?+" | "{" repeat_range "}+" )?        PCRE
 //戻り値：エラー時はNULLを返し、reg_err_code/reg_err_msgにエラー情報を設定する。
 static reg_compile_t *sequence_exp(const char *regexp, pattern_type_t mode) {
     reg_compile_t *preg_compile = new_reg_compile();
@@ -560,7 +566,7 @@ static reg_stat_t repeat_exp(reg_compile_t *preg_compile) {
                     break;
                 }
             }
-            if (new_repeat(preg_compile)==REG_ERR) return REG_ERR;
+            if (set_repeat(preg_compile)==REG_ERR) return REG_ERR;
             if ((reg_syntax&RE_CONTEXT_INDEP_OPS)) continue;
         }
         break;
@@ -594,6 +600,9 @@ static reg_stat_t repeat_exp(reg_compile_t *preg_compile) {
 //              | "\<" | "\>"                                               GNU
 //              | "\b" | "\B"                                               GNU/PCRE
 //              | "\`" | "\'"                                               GNU
+//              | "\a" | "\e" | "\f" | "\n" | "\r" | "\t"                       PCRE
+//              | "\cx" | "\0dd" | "\ddd" | "\o{ddd..}"                         PCRE
+//              | "\N{U+hh.}" |"\xhh" | "\x{hh..}"                              PCRE
 static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
     pattern_t *pat = NULL;
     int cont_flag;
@@ -617,27 +626,23 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
             if ((reg_syntax&RE_ALLOW_ILLEGAL_REPEAT) && strchr(preg_compile->p, '}')==NULL) goto L_CHAR;
             reg_set_err(REG_ERR_CODE_INVALID_PRECEDING_REGEXP);
         } else if (token_is_open_paren(preg_compile->p)) {          //'('
-            return new_subreg(preg_compile);
+            return set_subreg(preg_compile);
         } else if (token_is_close_paren(preg_compile->p)) {         //')'
             if (preg_compile->mode==PAT_SUBREG) return REG_END;
             if (reg_syntax&RE_UNMATCHED_RIGHT_PAREN_ORD) goto L_CHAR;  //EREでは単独の')'はリテラル
             reg_set_err(REG_ERR_CODE_UNMATCHED_PAREN);
-        } else if (token1_is(preg_compile->p, '\\') && preg_compile->p[1]>='1' && preg_compile->p[1]<='9') {
-            int num = preg_compile->p[1] - '0';
-            if (num>MAX_PAREN || (preg_compile->backref_flags&(1 << num))==0) {
-                reg_set_err(REG_ERR_CODE_INVALID_BACK_REF);
-            } else {
-                pat = new_pattern(PAT_BACKREF);
-                pat->ref_num = num;
-                preg_compile->p++;
-            }
         } else if (token_is_vbar(preg_compile->p)) {
             return REG_END;
         } else if (token1_is(preg_compile->p, '\\')) {
             preg_compile->p++;
-            if ((!(reg_syntax&RE_NO_GNU_OPS)  && token1_in(preg_compile->p, "wWsS")) ||
-                ( (reg_syntax&RE_PCRE2)       && token1_in(preg_compile->p, "wWsSdDhHRN"))) {
-                return new_char_set_ext(preg_compile);
+            if ((reg_syntax&RE_PCRE2) && (token1_in(preg_compile->p, "acefnrtox01234567") ||
+                                          token2_is(preg_compile->p, "N{"))) {  //"N{U+hh..}"を"\N"に優先させる
+                return set_escape_char(preg_compile);
+            } else if ((!(reg_syntax&RE_NO_GNU_OPS)  && token1_in(preg_compile->p, "wWsS")) ||      //"\s","\w",..
+                       ( (reg_syntax&RE_PCRE2)       && token1_in(preg_compile->p, "wWsSdDhHRN"))) {//"\d","\N",..
+                return set_char_set_ext(preg_compile);
+            } else if (*preg_compile->p>='1' && *preg_compile->p<='9') {
+                return set_backref(preg_compile);
             } else if (!(reg_syntax&RE_NO_GNU_OPS) && token1_is(preg_compile->p, '<')) {
                 pat = new_pattern(PAT_WORD_FIRST);
             } else if (!(reg_syntax&RE_NO_GNU_OPS) && token1_is(preg_compile->p, '>')) {
@@ -662,13 +667,13 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
                 pat->c = *preg_compile->p;
             }
         } else if (token1_is(preg_compile->p, '[')) {
-            return new_char_set(preg_compile);
+            return set_char_set(preg_compile);
         } else if (token1_is(preg_compile->p, '$') &&
                    (reg_syntax&RE_CONTEXT_INDEP_ANCHORS ||
                     token_is_end(preg_compile->p+1) ||
                     (token_is_close_paren(preg_compile->p+1) && preg_compile->mode==PAT_SUBREG))) {
             pat = new_pattern(PAT_DOLLAR);
-            cont_flag = 1;
+            //cont_flag = 1;
         } else if (token1_is(preg_compile->p, '^') &&
                    ((reg_syntax&RE_CONTEXT_INDEP_ANCHORS) || preg_compile->regexp==preg_compile->p)) {
             pat = new_pattern(PAT_CARET);
@@ -700,8 +705,23 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
     return REG_OK;
 }
 
-// new_subreg: \(\)の中身を抽出する
-static reg_stat_t new_subreg(reg_compile_t *preg_compile) {
+// set_backref: \nを後方参照として登録する。
+static reg_stat_t set_backref(reg_compile_t *preg_compile) {
+    assert(token_is_digit(preg_compile->p));
+    int num = *preg_compile->p - '0';
+    if (num>MAX_PAREN || (preg_compile->backref_flags&(1 << num))==0) {
+        reg_set_err(REG_ERR_CODE_INVALID_BACK_REF);
+        return REG_ERR;
+    }
+    pattern_t *pat = new_pattern(PAT_BACKREF);
+    pat->ref_num = num;
+    push_pattern(preg_compile, pat);
+    preg_compile->p++;
+    return REG_OK;
+}
+
+// set_subreg: \(\)の中身を抽出する
+static reg_stat_t set_subreg(reg_compile_t *preg_compile) {
     pattern_t *pat = new_pattern(PAT_SUBREG);
     const char *regexp = preg_compile->p;
     assert(token_is_open_paren(regexp));
@@ -724,13 +744,8 @@ static reg_stat_t new_subreg(reg_compile_t *preg_compile) {
     return REG_OK;
 }
 
-// new_repeat: 繰り返し条件を生成する
-// repeat_exp   = primary_exp ( "*" | "\{" repeat_range "\}" )?             BRE
-//              | primary_exp ( "*" | "+" | "?" | "{" repeat_range "}" )?       ERE
-// repeat_range = num                                                       BRE/ERE
-//              | num? "," num
-//              | num "," num?
-static reg_stat_t new_repeat(reg_compile_t *preg_compile) {
+// set_repeat: 繰り返し条件を生成する
+static reg_stat_t set_repeat(reg_compile_t *preg_compile) {
     const char *regexp = preg_compile->p;
     assert(token_is_open_brace(regexp));
     int mode = 1;   //第nパラメータ取得モード
@@ -749,7 +764,7 @@ static reg_stat_t new_repeat(reg_compile_t *preg_compile) {
                 if (min<0) min = 0;
                 max = min;
                 if (*regexp=='\\') regexp++;
-            } else if (isdigit(*regexp)) {
+            } else if (token_is_digit(regexp)) {
                 if (min<0) min = 0;
                 min = min*10 + *regexp - '0';
             } else {
@@ -760,7 +775,7 @@ static reg_stat_t new_repeat(reg_compile_t *preg_compile) {
             if        (token_is_close_brace(regexp)) {  //'}'
                 mode = 3;   //完了
                 if (*regexp=='\\') regexp++;
-            } else if (isdigit(*regexp)) {
+            } else if (token_is_digit(regexp)) {
                 if (max<0) max = 0;
                 max = max*10 + *regexp - '0';
             } else {
@@ -862,8 +877,8 @@ static void push_char_set_str(char_set_t *char_set, const char *str) {
     for (; *str; str++) push_char_set(char_set, *str);
 }
 
-// new_char_set: 文字セットを生成する。入力："[...]"
-static reg_stat_t new_char_set(reg_compile_t *preg_compile) {
+// set_char_set: 文字セットを生成する。入力："[...]"
+static reg_stat_t set_char_set(reg_compile_t *preg_compile) {
     pattern_t *pat = new_pattern(PAT_CHARSET);
     const char *regexp = preg_compile->p;
     assert(token1_is(regexp, '['));
@@ -871,12 +886,16 @@ static reg_stat_t new_char_set(reg_compile_t *preg_compile) {
     pat->cset = char_set = calloc(1, sizeof(char_set_t));
 #ifdef REG_ENABLE_UTF8
     char_set->ranges = new_array(0);
-    const char* range_start = NULL; //範囲指定の開始文字の位置
 #endif //REG_ENABLE_UTF8
+    const char* range_start = NULL; //範囲指定の開始文字の位置
     int range_start_len = 0;        //範囲指定の開始文字の長さ。0でない場合は次の文字で範囲指定の'-'が利用できる
     int bracket_is_closed = 0;  //']'が出現済み
 
     regexp++;
+    if (token_is_end(regexp)) {
+        reg_set_err(REG_ERR_CODE_UNMATCHED_BRACKET);
+        return REG_ERR;
+    }
     if (token1_is(regexp, '^')) {
         if (token1_is(regexp+1, ']')) {
             reg_pattern_free(pat);
@@ -886,14 +905,20 @@ static reg_stat_t new_char_set(reg_compile_t *preg_compile) {
         char_set->reverse = 1;
         memset(char_set->chars, 1, 256);
         regexp++;
+        if (token_is_end(regexp)) {
+            reg_set_err(REG_ERR_CODE_UNMATCHED_BRACKET);
+            return REG_ERR;
+        }
     }
     if (token1_is(regexp, ']') || token1_is(regexp, '-')) {
         push_char_set(char_set, *regexp);
-#ifdef REG_ENABLE_UTF8
         range_start = regexp;
-#endif
         range_start_len = 1;
         regexp++;
+        if (token_is_end(regexp)) {
+            reg_set_err(REG_ERR_CODE_UNMATCHED_BRACKET);
+            return REG_ERR;
+        }
     }
 
     for (; !token_is_end(regexp); regexp++) {
@@ -929,6 +954,18 @@ static reg_stat_t new_char_set(reg_compile_t *preg_compile) {
             regexp++;
             bracket_is_closed = 1;
             break;
+        } else if ((reg_syntax&RE_PCRE2) && token1_is(regexp, '\\')) {
+            range_start = regexp;
+            preg_compile->p = regexp + 1;
+            int c = get_escape_char(preg_compile, /*enable_backref=*/0);
+            regexp = preg_compile->p;
+            range_start_len = regexp - range_start;
+            regexp--;
+            if (c<0) return REG_ERR;
+            if (c<=0xff) push_char_set(char_set, c);
+#ifdef REG_ENABLE_UTF8
+            else         push_char_set_wc(char_set, (wchar_t)c);
+#endif
         } else {
             L_CHAR:;
 #ifdef REG_ENABLE_UTF8
@@ -953,7 +990,7 @@ static reg_stat_t new_char_set(reg_compile_t *preg_compile) {
 }
 
 //"\w"等に対応した文字セットを登録する。
-static reg_stat_t new_char_set_ext(reg_compile_t *preg_compile) {
+static reg_stat_t set_char_set_ext(reg_compile_t *preg_compile) {
     pattern_t *pat = new_pattern(PAT_CHARSET);
     char_set_t *char_set;
     pat->cset = char_set = calloc(1, sizeof(char_set_t));;
@@ -986,25 +1023,33 @@ static reg_stat_t new_char_set_ext(reg_compile_t *preg_compile) {
         break;
     case 'd':           //[[:digit:]]
         set_digit(char_set);
+#ifdef REG_ENABLE_UTF8
         if (reg_syntax&RE_PCRE2) for (wchar_t wc=L'０'; wc<=L'９'; wc++) push_char_set_wc(char_set, wc);
+#endif
         push_char_set_class(char_set, CHAR_CLASS_DIGIT);
         break;
     case 'D':           //[^[:digit:]]
         char_set->reverse = 1;
         memset(char_set->chars, 1, 256);
         set_digit(char_set);
+#ifdef REG_ENABLE_UTF8
         if (reg_syntax&RE_PCRE2) for (wchar_t wc=L'０'; wc<=L'９'; wc++) push_char_set_wc(char_set, wc);
+#endif
         push_char_set_class(char_set, CHAR_CLASS_DIGIT);
         break;
     case 'h':           //[ \t]     //PCRE
         push_char_set_str(char_set, " \t");
+#ifdef REG_ENABLE_UTF8
         push_char_set_wc(char_set, L'　');  //#Unicodeには簡易対応
+#endif
         break;
     case 'H':           //[^ \t]    //PCRE
         char_set->reverse = 1;
         memset(char_set->chars, 1, 256);
         push_char_set_str(char_set, " \t");
+#ifdef REG_ENABLE_UTF8
         push_char_set_wc(char_set, L'　');  //#Unicodeには簡易対応
+#endif
         break;
     case 'R':           //[\n\r]    //PCRE
         push_char_set_str(char_set, "\n\r");
@@ -1121,6 +1166,168 @@ static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_s
     return REG_OK;
 }
 
+//エスケープ文字を登録する。
+static reg_stat_t set_escape_char(reg_compile_t *preg_compile) {
+    int c = get_escape_char(preg_compile, /*enable_backref=*/1);
+    if (c==-1) return REG_ERR;
+    if (c==-2) return REG_OK;   //後方参照
+    if (c<0xff) {
+        pattern_t *pat = new_pattern(PAT_CHAR);
+        pat->c = c;
+        push_pattern(preg_compile, pat);
+    } else {
+#ifdef REG_ENABLE_UTF8
+        pattern_t *pat = new_pattern(PAT_WC);
+        pat->wc = (wchar_t)c;
+        push_pattern(preg_compile, pat);
+#else
+        reg_set_err(REG_ERR_CODE_CODE_POINT_TOO_LARGE);
+        return REG_ERR;
+#endif
+    }
+    return REG_OK;
+}
+
+
+//エスケープ文字を取得する。
+//エラーの場合は-1を返す。後方参照だった場合は-2を返す。
+#define MAX_OCTAL_LEN 10
+#define MAX_HEX_LEN 8
+#ifdef REG_ENABLE_UTF8
+#define MAX_CODE_POINT  L'\U000e01ef'
+#else
+#define MAX_CODE_POINT  0xff
+#endif
+static int get_escape_char(reg_compile_t *preg_compile, int enable_backref) {
+    int c = *preg_compile->p++;
+    int len = 0;
+    switch (c) {
+    case 'a': c = '\a';   break;
+    case 'e': c = '\x1b'; break;
+    case 'f': c = '\f';   break;
+    case 'n': c = '\n';   break;
+    case 'r': c = '\r';   break;
+    case 't': c = '\t';   break;
+    case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7': //"\0dd", "\ddd": octal
+        c = c - '0'; len = 1;
+        while (len<3 && !token_is_end(preg_compile->p) && token_is_octal(preg_compile->p)) {
+            c = c*8 + *preg_compile->p++ - '0';
+            len++;
+        }
+        if (enable_backref && len==1 && c>0) {  //"\1" - "\7"後方参照
+            preg_compile->p--;
+            if (set_backref(preg_compile)==REG_OK) return -2;
+            else return -1;
+        }
+        break;
+    case 'c':   //\cx   小文字を大文字化してbit6を反転させる。
+        if (token_is_end(preg_compile->p)) {
+            reg_set_err(REG_ERR_CODE_CTRL_C_AT_END);
+            return -1;
+        }
+        c = toupper(*preg_compile->p);
+        if (c<' ' || c >'~') {
+            reg_set_err(REG_ERR_CODE_NOT_PRINTABLE_ASCII);
+            return -1;
+        }
+        c ^= 0x40;
+        preg_compile->p++;
+        break;
+    case 'o':   //"\o{ddd...}
+        if (token_is_end(preg_compile->p) || !token1_is(preg_compile->p, '{')) {
+            reg_set_err(REG_ERR_CODE_MISSING_OPEN_BRACE_O);
+            return -1;
+        }
+        c = len = 0;
+        preg_compile->p++;  //'{'をスキップ
+        while (len<MAX_OCTAL_LEN && !token_is_end(preg_compile->p)) {
+            if (token_is_octal(preg_compile->p)) {
+                c = c*8 + *preg_compile->p++ - '0';
+                len++;
+                if (c>MAX_CODE_POINT) {
+                    reg_set_err(REG_ERR_CODE_CODE_POINT_TOO_LARGE);
+                    return -1;
+                }
+            } else if (token1_is(preg_compile->p, '}')) {
+                break;
+            } else {
+                reg_set_err(REG_ERR_CODE_NON_OCTAL_CHAR);
+                return -1;
+            }
+        }
+        if (len==0) {
+            reg_set_err(REG_ERR_CODE_DIGITS_MISSING);
+            return -1;
+        } else if (token_is_end(preg_compile->p)) {
+            reg_set_err(REG_ERR_CODE_NON_OCTAL_CHAR);
+            return -1;
+        }
+        preg_compile->p++;  //'}'をスキップ
+        break;
+    case 'x':
+        c = 0; len = 0;
+        if (!token_is_end(preg_compile->p) && token1_is(preg_compile->p, '{')) {  //"\x{hh..}"
+            preg_compile->p++;  //'{'をスキップ
+#ifdef REG_ENABLE_UTF8
+            L_HEX:
+#endif
+            while (len<MAX_HEX_LEN && !token_is_end(preg_compile->p)) {
+                if (token_is_digit(preg_compile->p)) {
+                    c = c*16 + *preg_compile->p++ - '0';
+                    len++;
+                    if (c>MAX_CODE_POINT) {
+                        reg_set_err(REG_ERR_CODE_CODE_POINT_TOO_LARGE);
+                        return -1;
+                    }
+                } else if (token_is_xdigit(preg_compile->p)) {
+                    c = c*16 + tolower(*preg_compile->p) - 'a' + 10;
+                    preg_compile->p++;
+                    len++;
+                } else if (token1_is(preg_compile->p, '}')) {
+                    break;
+                } else {
+                    reg_set_err(REG_ERR_CODE_NON_HEX_CHAR);
+                    return -1;
+                }
+            }
+            if (len==0) {
+                reg_set_err(REG_ERR_CODE_DIGITS_MISSING);
+                return -1;
+            } else if (token_is_end(preg_compile->p)) {
+                reg_set_err(REG_ERR_CODE_NON_HEX_CHAR);
+                return -1;
+            }
+            preg_compile->p++;  //'}'をスキップ
+        } else {                                //"\xhh"
+            while (len<2 && !token_is_end(preg_compile->p) && token_is_xdigit(preg_compile->p)) {
+                if (token_is_digit(preg_compile->p)) c = c*16 + *preg_compile->p - '0';
+                else                                 c = c*16 + tolower(*preg_compile->p) - 'a' + 10;
+                len++; preg_compile->p++;
+            }
+        }
+        break;
+#ifdef REG_ENABLE_UTF8
+    case 'N':   //"N{U+hh..}"
+        preg_compile->p++;  //'{'をスキップ
+        if (token_len(preg_compile->p)>=2 && token2_is(preg_compile->p, "U+")) {
+            preg_compile->p += 2;
+            c = 0; len = 0;
+            goto L_HEX;
+        }
+        reg_set_err(REG_ERR_CODE_INVALID_UNICODE);
+        return -1;
+#endif
+    default:
+        c = -1;
+        break;
+    }
+
+    if (c<0) {
+        reg_set_err(REG_ERR_CODE_UNKNOWN_ESCAPE);
+        return -1;
+    }
+    return c;
+}
 
 //--------------------------------------------------------------------------------
 
@@ -1632,6 +1839,7 @@ void reg_print_str(FILE *fp, const char *bstr, int len) {
     const unsigned char *p = (const unsigned char*)bstr;
     for(int i=0; i<len; i++, p++) {
         switch (*p) {
+        case '\a': fputs("\\a", fp); break;     //7
         case '\t': fputs("\\t", fp); break;     //9
         case '\n': fputs("\\n", fp); break;     //10
         case '\v': fputs("\\v", fp); break;     //11
@@ -1786,7 +1994,15 @@ static reg_err_info_t reg_err_def[] = {
     {/*13*/REG_ERR_CODE_INVALID_PRECEDING_REGEXP,   "Invalid preceding regular expression"},
 //  { 109,                                          "quantifier does not follow a repeatable item"},
     {/*15*/REG_ERR_CODE_REGEXP_TOO_BIG,             "Regular expression too big"},
+    {/*102*/REG_ERR_CODE_CTRL_C_AT_END,             "\\c at end of pattern"},
     {/*103*/REG_ERR_CODE_UNKNOWN_ESCAPE,            "unrecognized character follows"},
+    {/*134*/REG_ERR_CODE_CODE_POINT_TOO_LARGE,      "character code point value in \\x{} or \\o{} is too large"},
+    {/*137*/REG_ERR_CODE_INVALID_UNICODE,           "invalid \\N{U+}"},
+    {/*155*/REG_ERR_CODE_MISSING_OPEN_BRACE_O,      "missing opening brace after \\o"},
+    {/*164*/REG_ERR_CODE_NON_OCTAL_CHAR,            "non-octal character in \\o{} (closing brace missing?)"},
+    {/*167*/REG_ERR_CODE_NON_HEX_CHAR,              "non-hex character in \\x{} (closing brace missing?)"},
+    {/*168*/REG_ERR_CODE_NOT_PRINTABLE_ASCII,       "\\c must be followed by a printable ASCII character"},
+    {/*178*/REG_ERR_CODE_DIGITS_MISSING,            "digits missing in \\x{} or \\o{} or \\N{U+}"},
 };
 reg_err_info_t reg_err_info = {0,""};    //エラーコード
 

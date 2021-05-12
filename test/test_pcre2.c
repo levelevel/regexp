@@ -14,8 +14,12 @@ int pc_regcomp(void **vpreg, const char *pattern, size_t len, int cflags, int on
     (void)off_syntax;
     int ret = 0;
     pcre2_code_8 *pcode = NULL;
+#ifdef REG_ENABLE_UTF8
     uint32_t options = PCRE2_UTF    //Treat pattern and subjects as UTF strings
                       |PCRE2_UCP;   //Use Unicode properties for \d, \w, etc.
+#else
+    uint32_t options = 0;
+#endif
     if (cflags&REG_ICASE)   options |= PCRE2_CASELESS;  //Do caseless matching
     if (cflags&REG_NEWLINE) options |= PCRE2_MULTILINE; //^ and $ match newlines within data
     if (on_syntax)          options |=  syntax_gnu2pcre2(on_syntax);

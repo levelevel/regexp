@@ -133,10 +133,13 @@
     {__LINE__, {"abc"},         {"[a]"},            {{"a"}},                1, 0, REG_ALL},
     {__LINE__, {"abc"},         {"a[ab]"},          {{"ab"}},               1, 0, REG_ALL},
     {__LINE__, {"abc"},         {"a[abc]c"},        {{"abc"}},              1, 0, REG_ALL},
-    {__LINE__, {"abc"},         {"[a"},             {{""}},                 1,-1, REG_ALL},
     {__LINE__, {"abc"},         {"[^a]"},           {{"b"}},                1, 0, REG_ALL},
     {__LINE__, {"aaa"},         {"[^a]"},           {{""}},                 1, 1, REG_ALL},
     {__LINE__, {"abc"},         {"[^abc]"},         {{""}},                 1, 1, REG_ALL},
+    {__LINE__, {"abc"},         {"["},              {{""}},                 1,-1, REG_ALL},
+    {__LINE__, {"abc"},         {"[a"},             {{""}},                 1,-1, REG_ALL},
+    {__LINE__, {"abc"},         {"[^"},             {{""}},                 1,-1, REG_ALL},
+    {__LINE__, {"abc"},         {"[^a"},            {{""}},                 1,-1, REG_ALL},
     {__LINE__, {"abc"},         {"[^]"},            {{""}},                 1,-1, REG_ALL},
     {__LINE__, {"^a"},          {"[^^]"},           {{"a"}},                1, 0, REG_ALL},
     {__LINE__, {"]"},           {"[]]"},            {{"]"}},                1, 0, REG_ALL},
@@ -333,8 +336,10 @@
     {__LINE__, {"x123ABCdefx"}, {"x[[:digit:]]*"},  {{"x123"}},             1, 0, REG_ALL},
     {__LINE__, {"x123ABCdefx"}, {"x\\d*"},          {{"x123"}},             1, 0, REG_PCRE2},//PCRE
     {__LINE__, {"x123ABCdefx"}, {"\\D{3}"},         {{"ABC"}},              1, 0, REG_PCRE2},//PCRE
+#ifdef REG_ENABLE_UTF8
     {__LINE__, {"a\ra \t　c"},  {"a\\h+"},          {{"a \t　"}},           1, 0, REG_PCRE2},//PCRE
     {__LINE__, {"a aあ\tc"},    {"\\h\\H+\\h"},     {{" aあ\t"}},           1, 0, REG_PCRE2},//PCRE
+#endif
     {__LINE__, {"a\r\n b"},     {"\\R+"},           {{"\r\n"}},             1, 0, REG_PCRE2},//PCRE
     {__LINE__, {"\n ab"},       {"\\N+"},           {{" ab"}},              1, 0, REG_PCRE2},//PCRE
 
@@ -442,9 +447,9 @@
     {__LINE__, {"\0\01a",3},    {"[[:cntrl:]]*",0}, {{"\0\01",2}},          1, 0, REG_ALL},
 //text_endのオーバーランチェック
     {__LINE__, {"abc",2},       {"abc"},            {{""}},                 1, 1, REG_ALL},
-    {__LINE__, {"あい",3},      {"あい"},           {{""}},                 1, 1, REG_ALL},
-#ifdef REG_ENABLE_UTF8
     {__LINE__, {"abc",2},       {"ab."},            {{""}},                 1, 1, REG_ALL},
+#ifdef REG_ENABLE_UTF8
+    {__LINE__, {"あい",3},      {"あい"},           {{""}},                 1, 1, REG_ALL},
     {__LINE__, {"あ",1},        {"."},              {{""}},                 1, 1, REG_ALL},
     {__LINE__, {"あ"},          {"あ",1},           {{"あ",1}},             1, 0, REG_GNU},
 //  {__LINE__, {"あ"},          {"あ",1},           {{"}},                  1,-1, REG_PCRE2},
@@ -539,6 +544,61 @@
     {__LINE__, {"x12３ABＣdefx"}, {"x\\d*"},        {{"x12３"}},            1, 0, REG_PCRE2},//PCRE
     {__LINE__, {"x12３ABＣdefx"}, {"\\D{3}"},       {{"ABＣ"}},             1, 0, REG_PCRE2},//PCRE
 #endif
+
+//escaped character
+    {__LINE__, {"\a\x1b\f\n\r\t"},{"\\a\\e\\f\\n\\r\\t"},{{"\a\x1b\f\n\r\t"}},1, 0, REG_PCRE2},//PCRE
+    {__LINE__, {"\a\f0"},       {"\\07\\0140"},     {{"\a\f0"}},            1, 0, REG_PCRE2},//PCRE
+    {__LINE__, {"\0\a\f0",4},   {"\\0\\07\\0140"},  {{"\0\a\f0",4}},        1, 0, REG_PCRE2},//PCRE
+    {__LINE__, {"\0\a\f0",4},   {"\\x0\\x7\\x0C0"}, {{"\0\a\f0",4}},        1, 0, REG_PCRE2},//PCRE
+    {__LINE__, {"\0\a\f0",4},   {"\\x\\x07\\x0c0"}, {{"\0\a\f0",4}},        1, 0, REG_PCRE2},//PCRE
+    {__LINE__, {"\0\a\f0",4},   {"\\o{0}\\o{07}\\o{014}0"}, {{"\0\a\f0",4}},1, 0, REG_PCRE2},//PCRE
+    {__LINE__, {"\0\a\f0",4},   {"\\x{0}\\x{07}\\x{0C}0"}, {{"\0\a\f0",4}}, 1, 0, REG_PCRE2},//PCRE
+    {__LINE__, {"\0\a\1770",4}, {"\\c@\\cG\\c?0"},  {{"\0\a\1770",4}},      1, 0, REG_PCRE2},//PCRE
+    {__LINE__, {"\0\a\1770",4}, {"\\c@\\cg\\c?0"},  {{"\0\a\1770",4}},      1, 0, REG_PCRE2},//PCRE
+    {__LINE__, {"`a~"},         {"\\c \\c!\\c>"},   {{"`a~"}},              1, 0, REG_PCRE2},//PCRE
+    {__LINE__, {"abc"},         {"\\o"},            {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {"abc"},         {"\\o{"},           {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {"abc"},         {"\\o{0"},          {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {"abc"},         {"\\o{}"},          {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {"abc"},         {"\\o{8}"},         {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {"abc"},         {"\\o{0A}"},        {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {"abc"},         {"\\oA"},           {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {"abc"},         {"\\x{"},           {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {"abc"},         {"\\x{0"},          {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {"abc"},         {"\\x{}"},          {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {"abc"},         {"\\x{G}"},         {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {"abc"},         {"\\x{0Z}"},        {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {"abc"},         {"\\xZ"},           {{""}},                 1, 1, REG_PCRE2},//PCRE
+    {__LINE__, {"abc"},         {"\\c"},            {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {"abc"},         {"\\c\n"},          {{""}},                 1,-1, REG_PCRE2},//PCRE
+#ifdef REG_ENABLE_UTF8
+    {__LINE__, {"abc"},         {"\\N{"},           {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {"abc"},         {"\\N{U"},          {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {"abc"},         {"\\N{UX"},         {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {"abc"},         {"\\N{U+"},         {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {"abc"},         {"\\N{U+}"},        {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {"abc"},         {"\\N{U+G}"},       {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {"abc"},         {"\\N{U+0Z}"},      {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {u8"\u3042"},    {"\\o{30102}"},     {{"あ"}},               1, 0, REG_PCRE2},//PCRE
+    {__LINE__, {u8"\u3042"},    {"\\x{3042}"},      {{"あ"}},               1, 0, REG_PCRE2},//PCRE
+    {__LINE__, {u8"\u3042"},    {"\\N{U+3042}"},    {{"あ"}},               1, 0, REG_PCRE2},//PCRE
+    {__LINE__, {u8"\U0001f600"},{"\\o{373000}"},    {{"😀"}},              1, 0, REG_PCRE2},//PCRE
+    {__LINE__, {u8"\U0001f600"},{"\\x{1f600}"},     {{"😀"}},              1, 0, REG_PCRE2},//PCRE
+    {__LINE__, {u8"\U0001f600"},{"\\N{U+1f600}"},   {{"😀"}},              1, 0, REG_PCRE2},//PCRE
+    {__LINE__, {u8"\u3042"},    {"\\o{3Z0102}"},    {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {u8"\u3042"},    {"\\x{3Z042}"},     {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {u8"\u3042"},    {"\\N{U+3Z042}"},   {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {"abc"},         {"\\o{777777777}"}, {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {"abc"},         {"\\x{123456789}"}, {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {"あz"},         {"[\\N{U+3042}]z"}, {{"あz"}},              1, 0, REG_PCRE2},//PCRE
+#else
+    {__LINE__, {"abc"},         {"\\o{30102}"},     {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {"abc"},         {"\\x{3042}"},      {{""}},                 1,-1, REG_PCRE2},//PCRE
+#endif
+    {__LINE__, {"\t\a\f"},      {"[\\t\\07\\x{c}]*"},{{"\t\a\f"}},          1, 0, REG_PCRE2},//PCRE
+    {__LINE__, {"abc"},         {"[\\o]"},          {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {"abc"},         {"(\\o)"},          {{""}},                 1,-1, REG_PCRE2},//PCRE
+    {__LINE__, {"abc"},         {"(\\o|a)"},        {{""}},                 1,-1, REG_PCRE2},//PCRE
 
 //  {__LINE__, {"a"},           {"[^a]"},           {{""}},                 1, 1, REG_ERE_PCRE2|REG_DUMP},   //dumpテスト
 //}

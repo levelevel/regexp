@@ -50,7 +50,15 @@ typedef enum {
     REG_ERR_CODE_INVALID_PRECEDING_REGEXP = 13,
     REG_ERR_CODE_REGEXP_TOO_BIG           = 15,
     //ここからはPCRE2から流用
+    REG_ERR_CODE_CTRL_C_AT_END            = 102,   //\c at end of pattern
     REG_ERR_CODE_UNKNOWN_ESCAPE           = 103,
+    REG_ERR_CODE_CODE_POINT_TOO_LARGE     = 134,   //character code point value in \x{} or \o{} is too large
+    REG_ERR_CODE_INVALID_UNICODE          = 137,   //PCRE2 does not support \F, \L, \l, \N{name}, \U, or \u
+    REG_ERR_CODE_MISSING_OPEN_BRACE_O     = 155,   //missing opening brace after \o
+    REG_ERR_CODE_NON_OCTAL_CHAR           = 164,   //non-octal character in \o{} (closing brace missing?)
+    REG_ERR_CODE_NON_HEX_CHAR             = 167,   //non-hex character in \x{} (closing brace missing?)
+    REG_ERR_CODE_NOT_PRINTABLE_ASCII      = 168,   //\c must be followed by a printable ASCII character
+    REG_ERR_CODE_DIGITS_MISSING           = 178,   //digits missing in \x{} or \o{} or \N{U+}
 } reg_err_code_t;
 
 //エラー情報

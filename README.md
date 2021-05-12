@@ -1,4 +1,4 @@
-# regexp：正規表現
+# regexp：正規表現ライブラリを一から作る
 
 GNU regex(POSIX)相当の基本正規表現(BRE)と拡張正規表現(ERE)をサポート。
 

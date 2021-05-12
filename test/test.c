@@ -24,6 +24,11 @@ int use_posix_version;
 
 reg_err_info_t ref_err_info; //リファレンス(GNU/PCRE2)のエラー情報
 
+static int err_code_match(int ec1, int ec2) {
+    if (ec1==2 && ec2) return 1;    //ec1:2, Invalid regular expression
+    return ec1==ec2;
+}
+
 static int test_regexp(test_t *test) {
     int n = test->no;
     const char *text = test->text;
@@ -140,8 +145,7 @@ static int test_regexp(test_t *test) {
         else                 pc_dump(void_preg);
 #endif
     }
-    if (result==0 || (errcode>1 && errcode!=reg_err_info.err_code) || dump_flag ||
-            (use_gnu_version && errcode && strncmp(ref_err_info.err_msg, reg_err_info.err_msg, 10)!=0)) {
+    if (result==0 || !err_code_match(errcode, reg_err_info.err_code) || dump_flag) {
         printf("%d: %s regexp='", n, use_gnu_version?"GNU:   ":"PCRE2: ");
         reg_print_str(stdout, regexp, rlen);
         if (use_gnu_version) printf("', errcode=%d, %s\n", errcode, ref_err_info.err_msg);
