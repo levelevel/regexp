@@ -389,9 +389,17 @@
     {__LINE__, {"ab\nxy"},      {"b$"},             {{"b"}},                1, 0, REG_ALL|REG_NEWLINE},
     {__LINE__, {"ab\nxy"},      {"b$x"},            {{""}},                 1, 1, REG_ALL|REG_NEWLINE},
     {__LINE__, {"ab\nxy"},      {"b$^x"},           {{""}},                 1, 1, REG_ALL|REG_NEWLINE},
-    {__LINE__, {"a\nb"},        {"a$\n^b"},         {{""}},                 1, 1, REG_BRE   |REG_NEWLINE},
+    {__LINE__, {"a\nb"},        {"a$\n^b"},         {{""}},                 1, 1, REG_BRE|REG_NEWLINE},
     {__LINE__, {"a\nb"},        {"a$\n^b"},         {{"a\nb"}},             1, 0, REG_ERE_PCRE2|REG_NEWLINE},
     {__LINE__, {"a\nb"},        {"a$^b"},           {{""}},                 1, 1, REG_ERE_PCRE2|REG_NEWLINE},
+    {__LINE__, {"ab\n"},        {"b$"},             {{""}},                 1, 1, REG_GNU},     //GNUの$は行末の\nにマッチしない
+    {__LINE__, {"ab\n"},        {"b$"},             {{"b"}},                1, 0, REG_PCRE2},   //PCREの$は行末の\nにマッチする
+    {__LINE__, {"ab\n\n"},      {"b$"},             {{""}},                 1, 1, REG_PCRE2},   //         行末の\n\nにはマッチしない
+    {__LINE__, {"ab\n"},        {"b\\Z"},           {{"b"}},                1, 0, REG_PCRE2},   //PCREの\Zは行末の\nにマッチする
+    {__LINE__, {"ab\n"},        {"b\\z"},           {{""}},                 1, 1, REG_PCRE2},   //PCREの\zは行末の\nにマッチしない
+    {__LINE__, {"ab\n"},        {"b$"},             {{"b"}},                1, 0, REG_ALL|REG_NEWLINE},
+    {__LINE__, {"ab\n"},        {"b\\Z"},           {{"b"}},                1, 0, REG_PCRE2|REG_NEWLINE},
+    {__LINE__, {"ab\n"},        {"b\\z"},           {{""}},                 1, 1, REG_PCRE2|REG_NEWLINE},
 
     {__LINE__, {"ab\nxy"},      {"\\(^x\\)y"},      {{"xy"},{"x"}},         2, 0, REG_BRE   |REG_NEWLINE},
     {__LINE__, {"ab\nxy"},      {"(^x)y"},          {{"xy"},{"x"}},         2, 0, REG_ERE_PCRE2|REG_NEWLINE},
@@ -511,7 +519,8 @@
     {__LINE__, {"aβｆ１三あ1"},{"[[:alpha:]]+"},   {{"aβｆ１三あ"}},      1, 0, REG_ERE},
 //  {__LINE__, {"aβｆ１三あ1"},{"[[:alpha:]]+"},   {{"aβｆ１三あ"}},      1, 0, REG_PCRE2},     //PCRE2_UCPを指定すると挙動が変わる
     {__LINE__, {"a1βｆ１三あ"},{"[[:alnum:]]+"},   {{"a1βｆ１三あ"}},     1, 0, REG_ERE_PCRE2},
-    {__LINE__, {"a1βｆ１三あ"},{"\\w+"},           {{"a1βｆ１三あ"}},     1, 0, REG_ERE_PCRE2},
+    {__LINE__, {"a1_βｆ１三あ"},{"\\w+"},          {{"a1_βｆ１三あ"}},    1, 0, REG_ERE_PCRE2},
+    {__LINE__, {"a1_βｆ１三あ"},{"[[:word:]]+"},   {{"a1_βｆ１三あ"}},    1, 0, REG_PCRE2},
     {__LINE__, {"aβ1１三あ"},  {"[[:digit:]]+"},   {{"1"}},                1, 0, REG_ERE},
 //  {__LINE__, {"aβ1１三あ"},  {"[[:digit:]]+"},   {{"1１"}},              1, 0, REG_PCRE2},     //PCRE2_UCPを指定すると全角もマッチ
     {__LINE__, {"a1ｆ１三あ"},  {"[[:xdigit:]]+"},  {{"a1"}},               1, 0, REG_ERE_PCRE2},
@@ -531,6 +540,7 @@
     {__LINE__, {"[:＆＋￥a]"},  {"\\W*"},           {{"[:＆＋￥"}},         1, 0, REG_ERE_PCRE2},
     {__LINE__, {"a1βｆ１三あ"},{"[[:alpha:][:digit:]]+"},
                                                     {{"a1βｆ１三あ"}},     1, 0, REG_ERE_PCRE2},
+    {__LINE__, {"\01@\177"},    {"[[:ascii:]]*"},   {{"\01@\177"}},         1, 0, REG_PCRE2},
 
     {__LINE__, {"ZΣＡあ"},     {"zσａ"},          {{"ZΣＡ"}},            1, 0, REG_ERE_PCRE2|REG_ICASE},
     {__LINE__, {"zσａあ"},     {"ZΣＡ"},          {{"zσａ"}},            1, 0, REG_ERE_PCRE2|REG_ICASE},

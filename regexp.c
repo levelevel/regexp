@@ -17,7 +17,7 @@
 //              | "(" reg_exp ")"                                               ERE
 //              | "\" ( "1" | ... | "9" )                                   BRE/ERE
 //              | "^" | "$"                                                     ERE
-//              | "\A" | "\z"                                                   PCRE
+//              | "\A" | "\z" | "\Z"                                            PCRE
 //              | "\w" | "\W" | "\s" | "\S"| "\b" | "\B"                    GNU/PCRE
 //              | "\d" | "^D" | "\h" | "^H" | "\v" | "\V" | "\R" | "\N"         PCRE
 //              | "\<" | "\>" | "\`" | "\'"                                 GNU
@@ -39,6 +39,8 @@
 //              | "cntrl"       #0x00-0x1f, 0x7f                            POSIX
 //              | "graph"       #[^ \t\n\r\f\v[:cntrl:]]                    POSIX
 //              | "print"       #[^\t\n\r\f\v[:cntrl:]]                     POSIX
+//              | "ascii"       #[\x00-\x7f]                                PCRE
+//              | "word"        #[_A-Za-z0-9]                               PCRE
 
 // https://www.cs.princeton.edu/courses/archive/spr09/cos333/beautiful.html
 // A Regular Expression Matcher
@@ -181,19 +183,21 @@ typedef enum {
     PAT_OR,             // |
     PAT_CARET,          // ^
     PAT_DOLLAR,         // $
+    PAT_TEXT_FIRST,     // \A, \`
+    PAT_TEXT_LAST,      // \z, \'
+    PAT_TEXT_LAST_NL,   // \Z
     PAT_WORD_FIRST,     // \<
     PAT_WORD_LAST,      // \>
     PAT_WORD_DELIM,     // \b
     PAT_NOT_WORD_DELIM, // \B
-    PAT_TEXT_FIRST,     // \`
-    PAT_TEXT_LAST,      // \'
     PAT_NULL,           //パターン配列の終わり
 } pattern_type_t;
 
 static const char *pattern_type_str[] = {
     "0", "PAT_CHAR", "PAT_WC", "PAT_CHARSET", "PAT_DOT", "PAT_REPEAT",
     "PAT_SUBREG", "PAT_BACKREF", "PAT_OR", "PAT_CARET", "PAT_DOLLAR",
-    "WORD_FIRST", "WORD_LAST", "WORD_DELIM", "NOT_WORD_DELIM", "TEXT_FIRTS", "TEXT_LAST",
+    "TEXT_FIRTS", "TEXT_LAST", "TEXT_LAST_NL",
+    "WORD_FIRST", "WORD_LAST", "WORD_DELIM", "NOT_WORD_DELIM",
     "PAT_NULL"
 };
 
@@ -587,7 +591,7 @@ static reg_stat_t repeat_exp(reg_compile_t *preg_compile) {
 //              | "(" reg_exp ")"                                               ERE
 //              | "\" ( "1" | ... | "9" )                                   BRE
 //              | "^"  | "$"                                                    ERE
-//              | "\A" | "\z"                                                   PCRE
+//              | "\A" | "\z" | "\Z"                                            PCRE
 //              | "\w" | "\W" | "\s" | "\S"| "\b" | "\B"                    GNU/PCRE
 //              | "\d" | "^D" | "\h" | "^H" | "\v" | "\V" | "\R" | "\N"         PCRE
 //              | "\<" | "\>" | "\`" | "\'"                                 GNU
@@ -650,6 +654,8 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
             } else if((!(reg_syntax&RE_NO_GNU_OPS) && token1_is(preg_compile->p, '\'')) ||
                       ((reg_syntax&RE_PCRE2)       && token1_is(preg_compile->p, 'z'))) {
                 pat = new_pattern(PAT_TEXT_LAST);
+            } else if(((reg_syntax&RE_PCRE2)       && token1_is(preg_compile->p, 'Z'))) {
+                pat = new_pattern(PAT_TEXT_LAST_NL);
             } else if ((reg_syntax&RE_ERROR_UNKNOWN_ESCAPE) && isalnum(*preg_compile->p)) {
                 reg_set_err(REG_ERR_CODE_UNKNOWN_ESCAPE);
                 return REG_ERR;
@@ -1109,6 +1115,8 @@ static void set_punct(char_set_t *char_set) {
 //              | "cntrl"       #0x00-0x1f, 0x7f                            POSIX
 //              | "graph"       #[^ \t\n\r\f\v[:cntrl:]]                    POSIX
 //              | "print"       #[^\t\n\r\f\v[:cntrl:]]                     POSIX
+//              | "ascii"       #[\x00-\x7f]                                PCRE
+//              | "word"        #[_A-Za-z0-9]                               PCRE
 static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_set) {
     const char *regexp = preg_compile->p;
     assert(token2_is(regexp, "[:"));
@@ -1167,6 +1175,14 @@ static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_s
         set_punct(char_set);
         push_char_set(char_set, ' ');
         push_char_set_class(char_set, CHAR_CLASS_PRINT);
+        regexp += 5;
+    } else if ((reg_syntax&RE_PCRE2) && strncmp(regexp, "word", 4)==0) {
+        push_char_set(char_set, '_');
+        set_alnum(char_set);
+        push_char_set_class(char_set, CHAR_CLASS_ALNUM);
+        regexp += 4;
+    } else if ((reg_syntax&RE_PCRE2) && strncmp(regexp, "ascii", 5)==0) {
+        for (int c=0x00; c<=0x7f; c++) push_char_set(char_set, c);
         regexp += 5;
     } else {
         reg_set_err(REG_ERR_CODE_INVALID_CHAR_CLASS);
@@ -1348,7 +1364,7 @@ static int get_escape_char(reg_compile_t *preg_compile, int enable_backref) {
 static const char* g_text_org;  //オリジナル検索文字列（reg_exec関数のtext引数）
 static const char *g_text_start;//検索文字列の先頭（^にマッチさせる位置）
 static const char *g_text_end;  //検索文字列の末尾の次の位置（文字列の終了判定に用いる）（$にマッチさせる位置）
-static int g_newline_anchor;    //\nをアンカーとする（^/$にマッチする）
+static int g_newline_anchor;    //\nをアンカーとする（^/$にマッチする、マルチラインモード）
 static size_t      g_nmatch;    //pmatchの要素数              （reg_exec関数のnmatch引数）
 static regmatch_t *g_pmatch;    //マッチング位置を格納する配列（reg_exec関数のpmatch引数）
 static int         g_eflags;    //検索モード                  （reg_exec関数のeflags引数）
@@ -1651,19 +1667,27 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
         return 0;
     case PAT_DOLLAR:            //'$'
         if ((!(g_eflags&REG_NOTEOL) && text_is_end(text)) ||                //textの最後にマッチ
-            (g_newline_anchor && !text_is_end(text) && *text=='\n')) {      //'\n'の前の空白文字にマッチ
+            (g_newline_anchor && !text_is_end(text) && *text=='\n') ||      //'\n'の前の空白文字にマッチ
+                                                                            //PCREの$はtextの最後の'\n'にもマッチする
+            ((reg_syntax&RE_PCRE2) && !text_is_end(text) && *text=='\n' && text_is_end(text+1))) {
             *match_len = 0; //長さ0にマッチ
             return 1;
         }
         return 0;
-    case PAT_TEXT_FIRST:         //"\`", "\A"
+    case PAT_TEXT_FIRST:         //"\A", "\`"
         if (text_is_start(text)) {      //textの先頭にマッチするが'\n'にはマッチしない
             *match_len = 0;
             return 1;
         }
         return 0;
-    case PAT_TEXT_LAST:          //"\'", "\z"
+    case PAT_TEXT_LAST:          //"\z", "\'"
         if (text_is_end(text)) {        //textの最後にマッチするが'\n'にはマッチしない
+            *match_len = 0;
+            return 1;
+        }
+        return 0;
+    case PAT_TEXT_LAST_NL:       //"\Z"
+        if (text_is_end(text) || (*text=='\n' && text_is_end(text+1))) {  //textの最後と最後の'\n'にマッチする
             *match_len = 0;
             return 1;
         }
