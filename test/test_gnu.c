@@ -1,4 +1,3 @@
-#define USE_GNU
 #include "test.h"
 
 //パターンをコンパイルする。

@@ -339,7 +339,11 @@
 #ifdef REG_ENABLE_UTF8
     {__LINE__, {"a\ra \t　c"},  {"a\\h+"},          {{"a \t　"}},           1, 0, REG_PCRE2},//PCRE
     {__LINE__, {"a aあ\tc"},    {"\\h\\H+\\h"},     {{" aあ\t"}},           1, 0, REG_PCRE2},//PCRE
+#else
+    {__LINE__, {"a\ra \tc"},    {"a\\h+"},          {{"a \t"}},             1, 0, REG_PCRE2},//PCRE
+    {__LINE__, {"a a\tc"},      {"\\h\\H+\\h"},     {{" a\t"}},             1, 0, REG_PCRE2},//PCRE
 #endif
+    {__LINE__, {"ab\v"},        {"\\V*"},           {{"ab"}},               1, 0, REG_PCRE2},//PCRE
     {__LINE__, {"a\r\n b"},     {"\\R+"},           {{"\r\n"}},             1, 0, REG_PCRE2},//PCRE
     {__LINE__, {"\n ab"},       {"\\N+"},           {{" ab"}},              1, 0, REG_PCRE2},//PCRE
 
@@ -546,7 +550,7 @@
 #endif
 
 //escaped character
-    {__LINE__, {"\a\x1b\f\n\r\t"},{"\\a\\e\\f\\n\\r\\t"},{{"\a\x1b\f\n\r\t"}},1, 0, REG_PCRE2},//PCRE
+    {__LINE__, {"\a\x1b\f\n\r\t\v"},{"\\a\\e\\f\\n\\r\\t\\v"},{{"\a\x1b\f\n\r\t\v"}},1, 0, REG_PCRE2},//PCRE
     {__LINE__, {"\a\f0"},       {"\\07\\0140"},     {{"\a\f0"}},            1, 0, REG_PCRE2},//PCRE
     {__LINE__, {"\0\a\f0",4},   {"\\0\\07\\0140"},  {{"\0\a\f0",4}},        1, 0, REG_PCRE2},//PCRE
     {__LINE__, {"\0\a\f0",4},   {"\\x0\\x7\\x0C0"}, {{"\0\a\f0",4}},        1, 0, REG_PCRE2},//PCRE

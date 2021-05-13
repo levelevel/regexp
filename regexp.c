@@ -18,14 +18,9 @@
 //              | "\" ( "1" | ... | "9" )                                   BRE/ERE
 //              | "^" | "$"                                                     ERE
 //              | "\A" | "\z"                                                   PCRE
-//              | "\w" | "\W"                                               GNU/PCRE
-//              | "\s" | "\S"                                               GNU/PCRE
-//              | "\d" | "^D"                                                   PCRE
-//              | "\h" | "^H"                                                   PCRE
-//              | "\R" | "\N"                                                   PCRE
-//              | "\<" | "\>"                                               GNU
-//              | "\b" | "\B"                                               GNU/PCRE
-//              | "\`" | "\'"                                               GNU
+//              | "\w" | "\W" | "\s" | "\S"| "\b" | "\B"                    GNU/PCRE
+//              | "\d" | "^D" | "\h" | "^H" | "\v" | "\V" | "\R" | "\N"         PCRE
+//              | "\<" | "\>" | "\`" | "\'"                                 GNU
 //              | "\a" | "\e" | "\f" | "\n" | "\r" | "\t"                       PCRE
 //              | "\cx" | "\0dd" | "\ddd" | "\o{ddd..}"                         PCRE
 //              | "\N{U+hh.}" |"\xhh" | "\x{hh..}"                              PCRE
@@ -282,8 +277,6 @@ typedef enum {
     REG_ERR,                //エラー時
 } reg_stat_t;
 
-static void push_char_set(char_set_t *char_set, unsigned char c);
-static void push_char_set_str(char_set_t *char_set, const char *str);
 static pattern_t *new_pattern(pattern_type_t type);
 static reg_compile_t *new_reg_compile(void);
 static reg_compile_t *reg_exp     (const char *regexp, pattern_type_t mode);
@@ -293,6 +286,9 @@ static reg_stat_t primary_exp (reg_compile_t *preg_compile);
 static reg_stat_t set_backref(reg_compile_t *preg_compile);
 static reg_stat_t set_subreg  (reg_compile_t *preg_compile);
 static reg_stat_t set_repeat  (reg_compile_t *preg_compile);
+static void push_char(reg_compile_t *preg_compile, int c);
+static void push_char_set(char_set_t *char_set, unsigned char c);
+static void push_char_set_str(char_set_t *char_set, const char *str);
 static reg_stat_t set_char_set(reg_compile_t *preg_compile);
 static reg_stat_t set_char_set_ext(reg_compile_t *preg_compile);
 static void set_alpha(char_set_t *char_set);
@@ -592,14 +588,9 @@ static reg_stat_t repeat_exp(reg_compile_t *preg_compile) {
 //              | "\" ( "1" | ... | "9" )                                   BRE
 //              | "^"  | "$"                                                    ERE
 //              | "\A" | "\z"                                                   PCRE
-//              | "\w" | "\W"                                               GNU/PCRE
-//              | "\s" | "\S"                                               GNU/PCRE
-//              | "\d" | "^D"                                                   PCRE
-//              | "\h" | "^H"                                                   PCRE
-//              | "\R" | "\N"                                                   PCRE
-//              | "\<" | "\>"                                               GNU
-//              | "\b" | "\B"                                               GNU/PCRE
-//              | "\`" | "\'"                                               GNU
+//              | "\w" | "\W" | "\s" | "\S"| "\b" | "\B"                    GNU/PCRE
+//              | "\d" | "^D" | "\h" | "^H" | "\v" | "\V" | "\R" | "\N"         PCRE
+//              | "\<" | "\>" | "\`" | "\'"                                 GNU
 //              | "\a" | "\e" | "\f" | "\n" | "\r" | "\t"                       PCRE
 //              | "\cx" | "\0dd" | "\ddd" | "\o{ddd..}"                         PCRE
 //              | "\N{U+hh.}" |"\xhh" | "\x{hh..}"                              PCRE
@@ -639,7 +630,7 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
                                           token2_is(preg_compile->p, "N{"))) {  //"N{U+hh..}"を"\N"に優先させる
                 return set_escape_char(preg_compile);
             } else if ((!(reg_syntax&RE_NO_GNU_OPS)  && token1_in(preg_compile->p, "wWsS")) ||      //"\s","\w",..
-                       ( (reg_syntax&RE_PCRE2)       && token1_in(preg_compile->p, "wWsSdDhHRN"))) {//"\d","\N",..
+                       ( (reg_syntax&RE_PCRE2)       && token1_in(preg_compile->p, "wWsSdDhHvVRN"))) {//"\d","\N",..
                 return set_char_set_ext(preg_compile);
             } else if (*preg_compile->p>='1' && *preg_compile->p<='9') {
                 return set_backref(preg_compile);
@@ -787,9 +778,7 @@ static reg_stat_t set_repeat(reg_compile_t *preg_compile) {
     if ((mode<3 || mode==10 || min<0) && (reg_syntax&RE_ALLOW_ILLEGAL_REPEAT)) {
         //不正な構文の場合、全体をリテラルとする。
         for (; *preg_compile->p; preg_compile->p++) {
-            pattern_t *pat = new_pattern(PAT_CHAR);
-            pat->c = *preg_compile->p;
-            push_pattern(preg_compile, pat);
+            push_char(preg_compile, *preg_compile->p);
         }
         return REG_OK;
     }
@@ -820,6 +809,24 @@ static reg_stat_t set_repeat(reg_compile_t *preg_compile) {
     push_pattern(preg_compile, pat);
     preg_compile->p = regexp;
     return REG_OK;
+}
+
+//文字（1バイト文字またはワイド文字）を登録する。
+static void push_char(reg_compile_t *preg_compile, int c) {
+    pattern_t *pat;
+    if (c<=0xff) {
+        pat = new_pattern(PAT_CHAR);
+        pat ->c = (reg_syntax&RE_ICASE)?toupper(c):c;
+    } else {
+#ifdef REG_ENABLE_UTF8
+        pat = new_pattern(PAT_WC);
+        pat->wc = (wchar_t)c;
+#else
+        reg_set_err(REG_ERR_CODE_CODE_POINT_TOO_LARGE);
+        return REG_ERR;
+#endif
+    }
+    push_pattern(preg_compile, pat);
 }
 
 #ifdef REG_ENABLE_UTF8
@@ -1051,6 +1058,14 @@ static reg_stat_t set_char_set_ext(reg_compile_t *preg_compile) {
         push_char_set_wc(char_set, L'　');  //#Unicodeには簡易対応
 #endif
         break;
+    case 'v':           //'\v'      //PCRE
+        push_char(preg_compile, '\v');
+        return REG_OK;
+    case 'V':           //[^\v]     //PCRE
+        char_set->reverse = 1;
+        memset(char_set->chars, 1, 256);
+        push_char_set(char_set, '\v');
+        break;
     case 'R':           //[\n\r]    //PCRE
         push_char_set_str(char_set, "\n\r");
         break;
@@ -1171,20 +1186,7 @@ static reg_stat_t set_escape_char(reg_compile_t *preg_compile) {
     int c = get_escape_char(preg_compile, /*enable_backref=*/1);
     if (c==-1) return REG_ERR;
     if (c==-2) return REG_OK;   //後方参照
-    if (c<0xff) {
-        pattern_t *pat = new_pattern(PAT_CHAR);
-        pat->c = c;
-        push_pattern(preg_compile, pat);
-    } else {
-#ifdef REG_ENABLE_UTF8
-        pattern_t *pat = new_pattern(PAT_WC);
-        pat->wc = (wchar_t)c;
-        push_pattern(preg_compile, pat);
-#else
-        reg_set_err(REG_ERR_CODE_CODE_POINT_TOO_LARGE);
-        return REG_ERR;
-#endif
-    }
+    push_char(preg_compile, c);
     return REG_OK;
 }
 

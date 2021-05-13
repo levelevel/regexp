@@ -1,6 +1,6 @@
 #include "test.h"
 
-#ifdef REG_ENABLE_PCRE2
+#ifdef TEST_ENABLE_PCRE2
 
 static uint32_t syntax_gnu2pcre2(int syntax) {
     uint32_t options = 0;
@@ -93,4 +93,4 @@ void pc_free_regex(pcre2_code_8 *pcode) {
     pcre2_code_free_8(pcode);
 }
 
-#endif //REG_ENABLE_PCRE2
+#endif //TEST_ENABLE_PCRE2

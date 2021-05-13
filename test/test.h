@@ -12,7 +12,7 @@
 
 #include "../regexp.h"
 
-#define REG_ENABLE_PCRE2    //PCRE2有効化
+#define TEST_ENABLE_PCRE2    //PCRE2互換機能テスト有効化（有効にしない場合PCRE2互換機能のテストは行われない）
 
 //テスト項目
 typedef struct {

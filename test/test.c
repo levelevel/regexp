@@ -1,4 +1,3 @@
-#define USE_GNU
 #include "test.h"
 #include "../regexp.h"
 
@@ -64,7 +63,7 @@ static int test_regexp(test_t *test) {
             }
             ret1 = gnu_regexec(void_preg, text, tlen, nmatch1, pmatch1, test);
         }
-#ifdef REG_ENABLE_PCRE2
+#ifdef TEST_ENABLE_PCRE2
     } else {
         errcode = pc_regcomp(&void_preg, regexp, rlen, test->cflags&REG_CFLAGS_MASK, test->on_syntax, test->off_syntax);
         if (errcode!=0) {
@@ -141,7 +140,7 @@ static int test_regexp(test_t *test) {
     if (result==0 || dump_flag) {
         reg_dump(stdout, preg_compile, 2);
         if (use_gnu_version) gnu_dump(void_preg);
-#ifdef REG_ENABLE_PCRE2
+#ifdef TEST_ENABLE_PCRE2
         else                 pc_dump(void_preg);
 #endif
     }
@@ -168,7 +167,7 @@ static int test_regexp(test_t *test) {
     free(pmatch1);
     free(pmatch2);
     if (use_gnu_version) gnu_free_regex(void_preg);
-#ifdef REG_ENABLE_PCRE2
+#ifdef TEST_ENABLE_PCRE2
     else                 pc_free_regex(void_preg);
 #endif
     reg_compile_free(preg_compile);
@@ -209,14 +208,16 @@ static int test_bstr(void) {
             if (test_regexp(test)==0) err_cnt++;
             ere_cnt++;
         }
-#ifdef REG_ENABLE_PCRE2
         if (org_cflags&REG_PCRE2) {
+#ifdef TEST_ENABLE_PCRE2
             use_gnu_version = 0;
             use_posix_version = 0;
             if (test_regexp(test)==0) err_cnt++;
             pcre2_cnt++;
-        }
+#else
+            pcre2_cnt--;
 #endif
+        }
     }
     printf("%s: %d/%d (BRE=%d, ERE=%d, skip=%d) (posix=%d, gnu=%d, pcre2=%d)\n",
         err_cnt?"FAIL":"PASS", err_cnt?err_cnt:cnt, cnt, bre_cnt, ere_cnt, size-cnt, posix_cnt, gnu_cnt, pcre2_cnt);
