@@ -52,9 +52,12 @@ typedef enum {
     //ここからはPCRE2から流用
     REG_ERR_CODE_CTRL_C_AT_END            = 102,   //\c at end of pattern
     REG_ERR_CODE_UNKNOWN_ESCAPE           = 103,
+    REG_ERR_CODE_UNRECOGNIZED_CHAR_PAREN  = 111,   //(111), unrecognized character after (? or (?-
     REG_ERR_CODE_CODE_POINT_TOO_LARGE     = 134,   //character code point value in \x{} or \o{} is too large
     REG_ERR_CODE_INVALID_UNICODE          = 137,   //PCRE2 does not support \F, \L, \l, \N{name}, \U, or \u
+    REG_ERR_CODE_SYNTAX_ERR_IN_SUBPTN_NAME= 142,   //syntax error in subpattern name (missing terminator?)
     REG_ERR_CODE_MISSING_OPEN_BRACE_O     = 155,   //missing opening brace after \o
+    REG_ERR_CODE_SUBPATTERN_NAME_EXPECTED = 162,   //subpattern name expected
     REG_ERR_CODE_NON_OCTAL_CHAR           = 164,   //non-octal character in \o{} (closing brace missing?)
     REG_ERR_CODE_NON_HEX_CHAR             = 167,   //non-hex character in \x{} (closing brace missing?)
     REG_ERR_CODE_NOT_PRINTABLE_ASCII      = 168,   //\c must be followed by a printable ASCII character

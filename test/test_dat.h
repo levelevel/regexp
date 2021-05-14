@@ -247,6 +247,7 @@
     {__LINE__, {"(a)"},         {"(a"},             {{""}},                 1,-1, REG_ERE_PCRE2},
     {__LINE__, {"abc"},         {"\\(\\)"},         {{""},{""}},            2, 0, REG_BRE},
     {__LINE__, {"abc"},         {"()"},             {{""},{""}},            2, 0, REG_ERE_PCRE2},
+    {__LINE__, {"abc"},         {"("},              {{""}},                 1,-1, REG_ERE_PCRE2},
 
     {__LINE__, {"abc"},         {"\\(^a\\)b"},      {{"ab"},{"a"}},         2, 0, REG_BRE},
     {__LINE__, {"0abc"},        {"\\(^a\\)b"},      {{""}},                 1, 1, REG_BRE},
@@ -324,6 +325,43 @@
     {__LINE__, {"ab"},          {"((a)|(b))\\1"},   {{""}},                 1, 1, REG_ERE_PCRE2},
     {__LINE__, {"ab"},          {"((a)|(b))\\2"},   {{""}},                 1, 1, REG_ERE_PCRE2},
     {__LINE__, {"ab"},          {"((a)|(b))\\3"},   {{""}},                 1, 1, REG_ERE_PCRE2},
+
+    {__LINE__, {"abc"},         {"(??a)(b)"},       {{""}},                 1,-1, REG_PCRE2},
+    {__LINE__, {"abc"},         {"(?"},             {{""}},                 1,-1, REG_PCRE2},
+    {__LINE__, {"abc"},         {"(?="},            {{""}},                 1,-1, REG_PCRE2},
+    {__LINE__, {"abc"},         {"(?<"},            {{""}},                 1,-1, REG_PCRE2},
+    {__LINE__, {"abc"},         {"(?<A"},           {{""}},                 1,-1, REG_PCRE2},
+    {__LINE__, {"abc"},         {"(?#a)(b)"},       {{"b"},{"b"}},          2, 0, REG_PCRE2},
+//参照なし
+    {__LINE__, {"abc"},         {"(?:a)(b)"},       {{"ab"},{"b"}},         2, 0, REG_PCRE2},
+//lookahead assertion
+    {__LINE__, {"abc"},         {"ab(?=c)"},        {{"ab"}},               1, 0, REG_PCRE2},
+    {__LINE__, {"abcd"},        {"ab(?=c)cd"},      {{"abcd"}},             1, 0, REG_PCRE2},   //!!!
+    {__LINE__, {"abc"},         {"ab(?=d)"},        {{""}},                 1, 1, REG_PCRE2},
+    {__LINE__, {"abc"},         {"ab(?!d)"},        {{"ab"}},               1, 0, REG_PCRE2},
+    {__LINE__, {"abc"},         {"ab(?!c)"},        {{""}},                 1, 1, REG_PCRE2},
+    {__LINE__, {"abc"},         {"(ab(?=c))"},      {{"ab"},{"ab"}},        2, 0, REG_PCRE2},
+    {__LINE__, {"abc"},         {"(ab(?!d))"},      {{"ab"},{"ab"}},        2, 0, REG_PCRE2},
+    {__LINE__, {"abc"},         {"a(?=b)(?=c)"},    {{""}},                 1, 1, REG_PCRE2},
+    {__LINE__, {"abc"},         {"a(?=b)(?=bc)"},   {{"a"}},                1, 0, REG_PCRE2},
+    {__LINE__, {"abc"},         {"ab(?=d|c)"},      {{"ab"}},               1, 0, REG_PCRE2},
+    {__LINE__, {"abc"},         {"ab(?=?=c)"},      {{""}},                 1,-1, REG_PCRE2},
+//lookbehind assertion
+    {__LINE__, {"abc"},         {"(?<=a)bc"},       {{"bc"}},               1, 0, REG_PCRE2},
+//  {__LINE__, {"@abc"},        {"@(?<=a)bc"},      {{""}},                 1, 1, REG_PCRE2},   //PCRE2では"bc"にならない
+    {__LINE__, {"abc"},         {"(?<=z)bc"},       {{""}},                 1, 1, REG_PCRE2},
+//  {__LINE__, {"aabc"},        {"(?<=a*)bc"},      {{""}},                 1,-1, REG_PCRE2},   //固定長でない場合はエラー
+    {__LINE__, {"abc"},         {"(?<!d)bc"},       {{"bc"}},               1, 0, REG_PCRE2},
+    {__LINE__, {"abc"},         {"(?<!a)bc"},       {{""}},                 1, 1, REG_PCRE2},
+    {__LINE__, {"abc"},         {"(?<=a)(?<=b)c"},  {{"c"}},                1, 0, REG_PCRE2},
+    {__LINE__, {"abc"},         {"(?<=d|a)bc"},     {{"bc"}},               1, 0, REG_PCRE2},
+    {__LINE__, {"abc"},         {"(?<=de|a)bc"},    {{"bc"}},               1, 0, REG_PCRE2},
+
+    {__LINE__, {"abc"},         {"a\\Kbc"},         {{"bc"}},               1, 0, REG_PCRE2},
+    {__LINE__, {"abc"},         {"(a)\\Kbc"},       {{"bc"},{"a"}},         2, 0, REG_PCRE2},
+    {__LINE__, {"abc"},         {"(a\\Kbc)"},       {{"bc"},{"abc"}},       2, 0, REG_PCRE2},
+    {__LINE__, {"aabc"},        {"(a*\\Kbc)"},      {{"bc"},{"aabc"}},      2, 0, REG_PCRE2},
+    {__LINE__, {"abc"},         {"a\\Kb\\Kc"},      {{"c"}},                1, 0, REG_PCRE2},
 
     {__LINE__, {"XYZ123_"},     {"[[:upper:]]*"},   {{"XYZ"}},              1, 0, REG_ALL},
     {__LINE__, {"abcXYZ123_"},  {"[[:upper:][:lower:]]*"}, {{"abcXYZ"}},    1, 0, REG_ALL},
