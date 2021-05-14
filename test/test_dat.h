@@ -353,7 +353,7 @@
 //  {__LINE__, {"aabc"},        {"(?<=a*)bc"},      {{""}},                 1,-1, REG_PCRE2},   //固定長でない場合はエラー
     {__LINE__, {"abc"},         {"(?<!d)bc"},       {{"bc"}},               1, 0, REG_PCRE2},
     {__LINE__, {"abc"},         {"(?<!a)bc"},       {{""}},                 1, 1, REG_PCRE2},
-    {__LINE__, {"abc"},         {"(?<=a)(?<=b)c"},  {{"c"}},                1, 0, REG_PCRE2},
+//    {__LINE__, {"abc"},         {"(?<=.)(?<!z)bc"}, {{"bc"}},               1, 0, REG_PCRE2},
     {__LINE__, {"abc"},         {"(?<=d|a)bc"},     {{"bc"}},               1, 0, REG_PCRE2},
     {__LINE__, {"abc"},         {"(?<=de|a)bc"},    {{"bc"}},               1, 0, REG_PCRE2},
 

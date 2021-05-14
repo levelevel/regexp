@@ -271,9 +271,8 @@ typedef struct regcomp {
     int eflags;             //正規表現の実行フラグ(REG_NOTBOL|...)
     int syntax;             //正規表現のsyntax。RE_*
     //コンパイル時の作業用
-    int rlen;               //regexpの長さ
     const char *regexp;     //コンパイル時に指定された正規表現
-    int regexp_len;         //regexpの長さ
+    int rlen;               //regexpの長さ
     const char *p;          //regexpを指す作業ポインタ
     pattern_t *prev_pat;    //直前のパターン
     pattern_type_t mode;    //処理中のパターン（PAT_SUBREG:"\)"が終了）
@@ -453,7 +452,6 @@ static reg_compile_t *reg_exp(const char *regexp, pattern_type_t mode) {
             preg_compile = new_reg_compile();
             preg_compile->regexp = preg_compile->p = regexp;
             preg_compile->rlen = g_regexp_end - regexp;
-            preg_compile->regexp_len = g_regexp_end-regexp;
             preg_compile->mode = mode;
             preg_compile->backref_flags = subreg->backref_flags;
             push_pattern(preg_compile, pat);
@@ -469,6 +467,7 @@ static reg_compile_t *reg_exp(const char *regexp, pattern_type_t mode) {
         subreg->ref_num = -1;
         push_array(pat->or_array, subreg);
         preg_compile->p = subreg->p;
+        preg_compile->rlen = preg_compile->p - regexp;
         preg_compile->backref_flags |= subreg->backref_flags;
     }
 
@@ -489,13 +488,13 @@ static reg_compile_t *sequence_exp(const char *regexp, pattern_type_t mode) {
     reg_compile_t *preg_compile = new_reg_compile();
     preg_compile->regexp = preg_compile->p = regexp;
     preg_compile->rlen = g_regexp_end - regexp;
-    preg_compile->regexp_len = g_regexp_end-regexp;
     preg_compile->mode = mode;
     reg_stat_t ret = REG_OK;
 
     while (ret==REG_OK) {
         ret = repeat_exp(preg_compile);
     }
+    preg_compile->rlen = preg_compile->p - regexp;
 
     if (ret==REG_ERR) {
         reg_compile_free(preg_compile);
