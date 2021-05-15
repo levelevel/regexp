@@ -194,6 +194,8 @@ typedef enum {
     PAT_WORD_LAST,      // \>
     PAT_WORD_DELIM,     // \b
     PAT_NOT_WORD_DELIM, // \B
+    PAT_SET_OPTION,     //syntaxをセットする
+    PAT_UNSET_OPTION,   //syntaxをアンセットする
     PAT_NULL,           //パターン配列の終わり
 } pattern_type_t;
 
@@ -255,6 +257,7 @@ typedef struct {
         reg_compile_t *regcomp; //type=PAT_SUBREG
         int ref_num;        //type=PAT_BACKREF, 1-9
         array_t *or_array;  //type=PAT_OR, regcomp_t*のarray
+        int syntax;         //type=PAT_SET_OPTION/PAT_UNSET_OPTION
     };
 } pattern_t;
 
@@ -321,22 +324,24 @@ static int reg_mblen(const char *str, int str_len);
 
 #define MAX_PAREN 9
 static int g_nparen;            //()の数(0-9)
-int reg_syntax;                 //syntax (RE_*)
-static const char* g_regexp_end;//regexpの末尾の次の位置
 
+int reg_syntax;                 //syntax (RE_*)
+#define syntax_is(b)      (reg_syntax&(b))
+
+static const char* g_regexp_end;//regexpの末尾の次の位置
 #define token_is_end(p)     ((p)>=g_regexp_end)
 
 #define token1_is(p, c)     (*(p)==c)
 #define token2_is(p, str)   (memcmp(p, str, 2)==0)
 #define token1_in(p, str)   (strchr(str,*(p)))
 
-#define token_is_open_brace(p)  ((reg_syntax&RE_NO_BK_BRACES) ? token1_is(p, '{') : token2_is(p, "\\{"))
-#define token_is_close_brace(p) ((reg_syntax&RE_NO_BK_BRACES) ? token1_is(p, '}') : token2_is(p, "\\}"))
-#define token_is_open_paren(p)  ((reg_syntax&RE_NO_BK_PARENS) ? token1_is(p, '(') : token2_is(p, "\\("))
-#define token_is_close_paren(p) ((reg_syntax&RE_NO_BK_PARENS) ? token1_is(p, ')') : token2_is(p, "\\)"))
-#define token_is_plus(p)       (!(reg_syntax&RE_BK_PLUS_QM)   ? token1_is(p, '+') : token2_is(p, "\\+"))
-#define token_is_question(p)   (!(reg_syntax&RE_BK_PLUS_QM)   ? token1_is(p, '?') : token2_is(p, "\\?"))
-#define token_is_vbar(p)        ((reg_syntax&RE_NO_BK_VBAR)   ? token1_is(p, '|') : token2_is(p, "\\|"))
+#define token_is_open_brace(p)  (syntax_is(RE_NO_BK_BRACES) ? token1_is(p, '{') : token2_is(p, "\\{"))
+#define token_is_close_brace(p) (syntax_is(RE_NO_BK_BRACES) ? token1_is(p, '}') : token2_is(p, "\\}"))
+#define token_is_open_paren(p)  (syntax_is(RE_NO_BK_PARENS) ? token1_is(p, '(') : token2_is(p, "\\("))
+#define token_is_close_paren(p) (syntax_is(RE_NO_BK_PARENS) ? token1_is(p, ')') : token2_is(p, "\\)"))
+#define token_is_plus(p)       (!syntax_is(RE_BK_PLUS_QM)   ? token1_is(p, '+') : token2_is(p, "\\+"))
+#define token_is_question(p)   (!syntax_is(RE_BK_PLUS_QM)   ? token1_is(p, '?') : token2_is(p, "\\?"))
+#define token_is_vbar(p)        (syntax_is(RE_NO_BK_VBAR)   ? token1_is(p, '|') : token2_is(p, "\\|"))
 #define token_is_octal(p)       ((*p)>='0' && (*p)<='7')
 #define token_is_digit(p)       isdigit(*(p))
 #define token_is_xdigit(p)      isxdigit(*(p))
@@ -394,6 +399,7 @@ static pattern_t *new_pattern(pattern_type_t type) {
 static reg_compile_t *new_reg_compile(void) {
     reg_compile_t *preg_compile = calloc(1, sizeof(reg_compile_t));
     assert(preg_compile);
+    preg_compile->syntax = reg_syntax;
     preg_compile->array = new_array(0);
     return preg_compile;
 }
@@ -522,7 +528,7 @@ static reg_stat_t repeat_exp(reg_compile_t *preg_compile) {
         if (token1_is(preg_compile->p, '*') ||
             token_is_plus(preg_compile->p) ||       //'+' or '/+'
             token_is_question(preg_compile->p)) {   //'?' or '/?'
-            if (reg_syntax&RE_ERROR_DUP_REPEAT) {
+            if (syntax_is(RE_ERROR_DUP_REPEAT)) {
                 switch (preg_compile->prev_pat->type) {
                 case PAT_CARET:
                 case PAT_REPEAT:
@@ -549,7 +555,7 @@ static reg_stat_t repeat_exp(reg_compile_t *preg_compile) {
             }
             push_pattern(preg_compile, pat);
             preg_compile->p++;
-            if (reg_syntax&RE_PCRE2 && !token_is_end(preg_compile->p)) {
+            if (syntax_is(RE_PCRE2) && !token_is_end(preg_compile->p)) {
                 if (token1_is(preg_compile->p, '?')) {          //"*?", "+?", "??"
                     pat->rep_mode = REP_LAZY;
                     preg_compile->p++;
@@ -558,9 +564,9 @@ static reg_stat_t repeat_exp(reg_compile_t *preg_compile) {
                     preg_compile->p++;
                 }
             }
-            if ((reg_syntax&RE_CONTEXT_INDEP_OPS)) continue;
+            if (syntax_is(RE_CONTEXT_INDEP_OPS)) continue;
         } else if (token_is_open_brace(preg_compile->p)) {  //'{' or '\{'
-            if (reg_syntax&RE_ERROR_DUP_REPEAT) {
+            if (syntax_is(RE_ERROR_DUP_REPEAT)) {
                 switch (preg_compile->prev_pat->type) {
                 case PAT_CARET:
                 case PAT_REPEAT:
@@ -571,7 +577,7 @@ static reg_stat_t repeat_exp(reg_compile_t *preg_compile) {
                 }
             }
             if (set_repeat(preg_compile)==REG_ERR) return REG_ERR;
-            if ((reg_syntax&RE_CONTEXT_INDEP_OPS)) continue;
+            if (syntax_is(RE_CONTEXT_INDEP_OPS)) continue;
         }
         break;
     }
@@ -593,6 +599,8 @@ static reg_stat_t repeat_exp(reg_compile_t *preg_compile) {
 //              | "[^" char_set "]"                                         BRE/ERE
 //              | "\(" reg_exp "\)"                                         BRE
 //              | "(" reg_exp ")"                                               ERE
+//              | "(?i)" | "(?m)" | (?s) | "(?U)" | "(?x)" | "(?xx)"            PCRE
+//              | "(?-...)" | "(?^)"                                            PCRE
 //              | "\" ( "1" | ... | "9" )                                   BRE
 //              | "^"  | "$"                                                    ERE
 //              | "\A" | "\z" | "\Z" | "\K"                                     PCRE
@@ -618,51 +626,51 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
         } else if ((token1_is(preg_compile->p, '*') ||
                     token_is_plus(preg_compile->p) ||               //'+'
                     token_is_question(preg_compile->p))             //'?'
-                && (reg_syntax&RE_CONTEXT_INVALID_OPS ||
+                && (syntax_is(RE_CONTEXT_INVALID_OPS) ||
                     (preg_compile->prev_pat && preg_compile->prev_pat->type!=PAT_CARET))) {
             reg_set_err(REG_ERR_CODE_INVALID_PRECEDING_REGEXP);
         } else if (token_is_open_brace(preg_compile->p)) {          //'{'
-            if ((reg_syntax&RE_ALLOW_ILLEGAL_REPEAT) && strchr(preg_compile->p, '}')==NULL) goto L_CHAR;
+            if (syntax_is(RE_ALLOW_ILLEGAL_REPEAT) && strchr(preg_compile->p, '}')==NULL) goto L_CHAR;
             reg_set_err(REG_ERR_CODE_INVALID_PRECEDING_REGEXP);
         } else if (token_is_open_paren(preg_compile->p)) {          //'('
             return set_subreg(preg_compile);
         } else if (token_is_close_paren(preg_compile->p)) {         //')'
             if (preg_compile->mode==PAT_SUBREG) return REG_END;
-            if (reg_syntax&RE_UNMATCHED_RIGHT_PAREN_ORD) goto L_CHAR;  //EREでは単独の')'はリテラル
+            if (syntax_is(RE_UNMATCHED_RIGHT_PAREN_ORD)) goto L_CHAR;  //EREでは単独の')'はリテラル
             reg_set_err(REG_ERR_CODE_UNMATCHED_PAREN);
         } else if (token_is_vbar(preg_compile->p)) {
             return REG_END;
         } else if (token1_is(preg_compile->p, '\\')) {
             preg_compile->p++;
-            if ((reg_syntax&RE_PCRE2) && (token1_in(preg_compile->p, "acefnrtox01234567") ||
+            if (syntax_is(RE_PCRE2) && (token1_in(preg_compile->p, "acefnrtox01234567") ||
                                           token2_is(preg_compile->p, "N{"))) {  //"N{U+hh..}"を"\N"に優先させる
                 return set_escape_char(preg_compile);
-            } else if ((!(reg_syntax&RE_NO_GNU_OPS)  && token1_in(preg_compile->p, "wWsS")) ||      //"\s","\w",..
-                       ( (reg_syntax&RE_PCRE2)       && token1_in(preg_compile->p, "wWsSdDhHvVRN"))) {//"\d","\N",..
+            } else if ((!syntax_is(RE_NO_GNU_OPS)  && token1_in(preg_compile->p, "wWsS")) ||      //"\s","\w",..
+                       ( syntax_is(RE_PCRE2)       && token1_in(preg_compile->p, "wWsSdDhHvVRN"))) {//"\d","\N",..
                 return set_char_set_ext(preg_compile);
             } else if (*preg_compile->p>='1' && *preg_compile->p<='9') {
                 return set_backref(preg_compile);
-            } else if (!(reg_syntax&RE_NO_GNU_OPS) && token1_is(preg_compile->p, '<')) {
+            } else if (!syntax_is(RE_NO_GNU_OPS) && token1_is(preg_compile->p, '<')) {
                 pat = new_pattern(PAT_WORD_FIRST);
-            } else if (!(reg_syntax&RE_NO_GNU_OPS) && token1_is(preg_compile->p, '>')) {
+            } else if (!syntax_is(RE_NO_GNU_OPS) && token1_is(preg_compile->p, '>')) {
                 pat = new_pattern(PAT_WORD_LAST);
-            } else if ((!(reg_syntax&RE_NO_GNU_OPS) || (reg_syntax&RE_PCRE2))
+            } else if ((!syntax_is(RE_NO_GNU_OPS) || syntax_is(RE_PCRE2))
                                                    && token1_is(preg_compile->p, 'b')) {
                 pat = new_pattern(PAT_WORD_DELIM);
-            } else if ((!(reg_syntax&RE_NO_GNU_OPS) || (reg_syntax&RE_PCRE2))
+            } else if ((!syntax_is(RE_NO_GNU_OPS) || syntax_is(RE_PCRE2))
                                                    && token1_is(preg_compile->p, 'B')) {
                 pat = new_pattern(PAT_NOT_WORD_DELIM);
-            } else if((!(reg_syntax&RE_NO_GNU_OPS) && token1_is(preg_compile->p, '`')) ||
-                      ((reg_syntax&RE_PCRE2)       && token1_is(preg_compile->p, 'A'))) {
+            } else if((!syntax_is(RE_NO_GNU_OPS) && token1_is(preg_compile->p, '`')) ||
+                      (syntax_is(RE_PCRE2)       && token1_is(preg_compile->p, 'A'))) {
                 pat = new_pattern(PAT_TEXT_FIRST);
-            } else if((!(reg_syntax&RE_NO_GNU_OPS) && token1_is(preg_compile->p, '\'')) ||
-                      ((reg_syntax&RE_PCRE2)       && token1_is(preg_compile->p, 'z'))) {
+            } else if((!syntax_is(RE_NO_GNU_OPS) && token1_is(preg_compile->p, '\'')) ||
+                      (syntax_is(RE_PCRE2)       && token1_is(preg_compile->p, 'z'))) {
                 pat = new_pattern(PAT_TEXT_LAST);
-            } else if(((reg_syntax&RE_PCRE2)       && token1_is(preg_compile->p, 'Z'))) {
+            } else if((syntax_is(RE_PCRE2)       && token1_is(preg_compile->p, 'Z'))) {
                 pat = new_pattern(PAT_TEXT_LAST_NL);
-            } else if(((reg_syntax&RE_PCRE2)       && token1_is(preg_compile->p, 'K'))) {
+            } else if((syntax_is(RE_PCRE2)       && token1_is(preg_compile->p, 'K'))) {
                 pat = new_pattern(PAT_SET_START);
-            } else if ((reg_syntax&RE_ERROR_UNKNOWN_ESCAPE) && isalnum(*preg_compile->p)) {
+            } else if (syntax_is(RE_ERROR_UNKNOWN_ESCAPE) && isalnum(*preg_compile->p)) {
                 reg_set_err(REG_ERR_CODE_UNKNOWN_ESCAPE);
                 return REG_ERR;
             } else {
@@ -672,16 +680,16 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
         } else if (token1_is(preg_compile->p, '[')) {
             return set_char_set(preg_compile);
         } else if (token1_is(preg_compile->p, '$') &&
-                   (reg_syntax&RE_CONTEXT_INDEP_ANCHORS ||
+                   (syntax_is(RE_CONTEXT_INDEP_ANCHORS) ||
                     token_is_end(preg_compile->p+1) ||
                     (token_is_close_paren(preg_compile->p+1) && preg_compile->mode==PAT_SUBREG))) {
             pat = new_pattern(PAT_DOLLAR);
             //cont_flag = 1;
         } else if (token1_is(preg_compile->p, '^') &&
-                   ((reg_syntax&RE_CONTEXT_INDEP_ANCHORS) || preg_compile->regexp==preg_compile->p)) {
+                   (syntax_is(RE_CONTEXT_INDEP_ANCHORS) || preg_compile->regexp==preg_compile->p)) {
             pat = new_pattern(PAT_CARET);
             cont_flag = 1;
-        } else if ((reg_syntax&(RE_COMMENT|RE_COMMENT_EXT)) && token1_in(preg_compile->p, " \t\n\r\f\v#")) {
+        } else if (syntax_is((RE_COMMENT|RE_COMMENT_EXT)) && token1_in(preg_compile->p, " \t\n\r\f\v#")) {
             if (*preg_compile->p=='#') {
                 while (!token_is_end(preg_compile->p) && !token1_is(preg_compile->p, '\n')) preg_compile->p++;
             } else preg_compile->p++;
@@ -699,7 +707,7 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
             {
                 pat = new_pattern(PAT_CHAR);
                 char c = preg_compile->p[0];
-                pat->c = (reg_syntax&RE_ICASE)?toupper(c):c;
+                pat->c = syntax_is(RE_ICASE)?toupper(c):c;
             }
         }
         if (pat) {
@@ -748,7 +756,7 @@ static reg_stat_t set_subreg(reg_compile_t *preg_compile) {
     int ref_num = 0;
     int assertion = 0;
 
-    if ((reg_syntax&RE_PCRE2) && token1_is(regexp, '?')) {
+    if (syntax_is(RE_PCRE2) && token1_is(regexp, '?')) {
         regexp++;
         error_if_token_end(regexp, REG_ERR_CODE_UNMATCHED_PAREN);
         switch (*regexp) {
@@ -846,7 +854,7 @@ static reg_stat_t set_repeat(reg_compile_t *preg_compile) {
             break;
         }
     }
-    if ((mode<3 || mode==10 || min<0) && (reg_syntax&RE_ALLOW_ILLEGAL_REPEAT)) {
+    if ((mode<3 || mode==10 || min<0) && syntax_is(RE_ALLOW_ILLEGAL_REPEAT)) {
         //不正な構文の場合、全体をリテラルとする。
         for (; *preg_compile->p; preg_compile->p++) {
             push_char(preg_compile, *preg_compile->p);
@@ -868,7 +876,7 @@ static reg_stat_t set_repeat(reg_compile_t *preg_compile) {
     pattern_t *pat = new_pattern(PAT_REPEAT);
     pat->min = min;
     pat->max = max;
-    if (reg_syntax&RE_PCRE2 && !token_is_end(regexp)) {
+    if (syntax_is(RE_PCRE2) && !token_is_end(regexp)) {
         if (token1_is(regexp, '?')) {          //"{n,m}?"
             pat->rep_mode = REP_LAZY;
             regexp++;
@@ -887,14 +895,13 @@ static void push_char(reg_compile_t *preg_compile, int c) {
     pattern_t *pat;
     if (c<=0xff) {
         pat = new_pattern(PAT_CHAR);
-        pat ->c = (reg_syntax&RE_ICASE)?toupper(c):c;
+        pat ->c = syntax_is(RE_ICASE)?toupper(c):c;
     } else {
 #ifdef REG_ENABLE_UTF8
         pat = new_pattern(PAT_WC);
         pat->wc = (wchar_t)c;
 #else
-        reg_set_err(REG_ERR_CODE_CODE_POINT_TOO_LARGE);
-        return REG_ERR;
+        assert(0);
 #endif
     }
     push_pattern(preg_compile, pat);
@@ -947,7 +954,7 @@ static void push_char_set_range(char_set_t *char_set, const char *start, int sle
 static void push_char_set(char_set_t *char_set, unsigned char c) {
     char_set->chars[c] = !char_set->reverse;
     unsigned uc = toupper(c);
-    if ((reg_syntax&RE_ICASE) && c!=uc)
+    if (syntax_is(RE_ICASE) && c!=uc)
         char_set->chars[uc] = !char_set->reverse;
 }
 //push_char_set_str: 文字セットに1バイト文字の文字列を追加する。
@@ -992,7 +999,7 @@ static reg_stat_t set_char_set(reg_compile_t *preg_compile) {
 
     for (; !token_is_end(regexp); regexp++) {
         if (token1_is(regexp, '-') && !token_is_end(regexp+1) && !token1_is(regexp+1,']')) {
-            if ((reg_syntax&RE_ALLOW_UNBALANCED_MINUS_IN_LIST) && range_start_len==0) goto L_CHAR;
+            if (syntax_is(RE_ALLOW_UNBALANCED_MINUS_IN_LIST) && range_start_len==0) goto L_CHAR;
             if (range_start_len==0 || regexp[-1]>regexp[1]) {
                 reg_pattern_free(pat);
                 reg_set_err(REG_ERR_CODE_INVALID_RANGE_END);
@@ -1023,7 +1030,7 @@ static reg_stat_t set_char_set(reg_compile_t *preg_compile) {
             regexp++;
             bracket_is_closed = 1;
             break;
-        } else if ((reg_syntax&RE_PCRE2) && token1_is(regexp, '\\')) {
+        } else if (syntax_is(RE_PCRE2) && token1_is(regexp, '\\')) {
             range_start = regexp;
             preg_compile->p = regexp + 1;
             int c = get_escape_char(preg_compile, /*enable_backref=*/0);
@@ -1035,7 +1042,7 @@ static reg_stat_t set_char_set(reg_compile_t *preg_compile) {
 #ifdef REG_ENABLE_UTF8
             else         push_char_set_wc(char_set, (wchar_t)c);
 #endif
-        } else if ((reg_syntax&RE_COMMENT_EXT) && token1_in(regexp, " \t")) {
+        } else if (syntax_is(RE_COMMENT_EXT) && token1_in(regexp, " \t")) {
             ;   //コメント
         } else {
             L_CHAR:;
@@ -1095,7 +1102,7 @@ static reg_stat_t set_char_set_ext(reg_compile_t *preg_compile) {
     case 'd':           //[[:digit:]]
         set_digit(char_set);
 #ifdef REG_ENABLE_UTF8
-        if (reg_syntax&RE_PCRE2) for (wchar_t wc=L'０'; wc<=L'９'; wc++) push_char_set_wc(char_set, wc);
+        if (syntax_is(RE_PCRE2)) for (wchar_t wc=L'０'; wc<=L'９'; wc++) push_char_set_wc(char_set, wc);
 #endif
         push_char_set_class(char_set, CHAR_CLASS_DIGIT);
         break;
@@ -1104,7 +1111,7 @@ static reg_stat_t set_char_set_ext(reg_compile_t *preg_compile) {
         memset(char_set->chars, 1, 256);
         set_digit(char_set);
 #ifdef REG_ENABLE_UTF8
-        if (reg_syntax&RE_PCRE2) for (wchar_t wc=L'０'; wc<=L'９'; wc++) push_char_set_wc(char_set, wc);
+        if (syntax_is(RE_PCRE2)) for (wchar_t wc=L'０'; wc<=L'９'; wc++) push_char_set_wc(char_set, wc);
 #endif
         push_char_set_class(char_set, CHAR_CLASS_DIGIT);
         break;
@@ -1202,7 +1209,7 @@ static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_s
     } else if (strncmp(regexp, "xdigit", 6)==0) {
         for (int c='0'; c<='9'; c++) push_char_set(char_set, c);
         for (int c='A'; c<='F'; c++) push_char_set(char_set, c);
-        if (!(reg_syntax&RE_ICASE))
+        if (!syntax_is(RE_ICASE))
             for (int c='a'; c<='f'; c++) push_char_set(char_set, c);
         push_char_set_class(char_set, CHAR_CLASS_XDIGIT);
         regexp += 6;
@@ -1234,12 +1241,12 @@ static reg_stat_t set_char_class(reg_compile_t *preg_compile, char_set_t *char_s
         push_char_set(char_set, ' ');
         push_char_set_class(char_set, CHAR_CLASS_PRINT);
         regexp += 5;
-    } else if ((reg_syntax&RE_PCRE2) && strncmp(regexp, "word", 4)==0) {
+    } else if (syntax_is(RE_PCRE2) && strncmp(regexp, "word", 4)==0) {
         push_char_set(char_set, '_');
         set_alnum(char_set);
         push_char_set_class(char_set, CHAR_CLASS_ALNUM);
         regexp += 4;
-    } else if ((reg_syntax&RE_PCRE2) && strncmp(regexp, "ascii", 5)==0) {
+    } else if (syntax_is(RE_PCRE2) && strncmp(regexp, "ascii", 5)==0) {
         for (int c=0x00; c<=0x7f; c++) push_char_set(char_set, c);
         regexp += 5;
     } else {
@@ -1296,7 +1303,7 @@ static int get_escape_char(reg_compile_t *preg_compile, int enable_backref) {
             else return -1;
         }
         break;
-    case 'c':   //\cx   小文字を大文字化してbit6を反転させる。
+    case 'c':   //\cx   制御文字。小文字を大文字化してbit6を反転させる。
         if (token_is_end(preg_compile->p)) {
             reg_set_err(REG_ERR_CODE_CTRL_C_AT_END);
             return -1;
@@ -1571,7 +1578,7 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
     case PAT_CHAR:
         if (text_is_end(text)) return 0;
         *match_len = 1;
-        return pat->c == ((reg_syntax&RE_ICASE)?toupper(*text):*text);
+        return pat->c == (syntax_is(RE_ICASE)?toupper(*text):*text);
 #ifdef REG_ENABLE_UTF8
     case PAT_WC:
         if (text_is_end(text)) return 0;
@@ -1581,7 +1588,7 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
             int ret = mbtowc(&wc, text, mbc_len);
             if (ret>=2) {
                 wc2 = pat->wc;
-                if (reg_syntax&RE_ICASE) {
+                if (syntax_is(RE_ICASE)) {
                     wc  = towupper(wc);
                     wc2 = towupper(wc2);
                 }
@@ -1596,11 +1603,11 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
     case PAT_CHARSET:
         if (text_is_end(text)) return 0;
         char_set_t *cset = pat->cset;
-        if (*text == '\n' && cset->reverse && reg_syntax&RE_HAT_LISTS_NOT_NEWLINE) return 0;
+        if (*text == '\n' && cset->reverse && syntax_is(RE_HAT_LISTS_NOT_NEWLINE)) return 0;
 #ifdef REG_ENABLE_UTF8
         mbc_len = reg_mblen(text, g_text_end-text);
         if (mbc_len<=1) {   //1バイト文字。UTF-8として不正な文字と'\0'は1バイト文字として処理する。
-            if (cset->chars[(reg_syntax&RE_ICASE)?toupper(*text):*text]) {
+            if (cset->chars[syntax_is(RE_ICASE)?toupper(*text):*text]) {
                 *match_len = 1;
                 return 1;
             };
@@ -1608,12 +1615,12 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
             wchar_t wc;
             int ret = mbtowc(&wc, text, mbc_len);  //mblen()>=2の場合なのでエラーは起こらない
             assert(ret>0);
-            if (reg_syntax&RE_ICASE) wc = towupper(wc);
+            if (syntax_is(RE_ICASE)) wc = towupper(wc);
             int match_flag = 0;
             if (cset->wcstr) {
                 for (int i=0; i<cset->wcs_len; i++) {
                     wchar_t wc2 = pat->cset->wcstr[i];
-                    if (reg_syntax&RE_ICASE) wc2 = towupper(wc2);
+                    if (syntax_is(RE_ICASE)) wc2 = towupper(wc2);
                     if (wc2==wc) {
                         match_flag = 1;
                         if (cset->reverse) return 0;
@@ -1630,10 +1637,10 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
                     case CHAR_CLASS_ALNUM:  match_flag = iswalnum (wc); break;
                     case CHAR_CLASS_DIGIT:  match_flag = iswdigit (wc); break;
                     case CHAR_CLASS_XDIGIT: match_flag = iswxdigit(wc); break;
-                    case CHAR_CLASS_LOWER:  match_flag = (reg_syntax&RE_ICASE)?
+                    case CHAR_CLASS_LOWER:  match_flag = syntax_is(RE_ICASE)?
                                                          iswalpha (wc):
                                                          iswlower (wc); break;
-                    case CHAR_CLASS_UPPER:  match_flag = (reg_syntax&RE_ICASE)?
+                    case CHAR_CLASS_UPPER:  match_flag = syntax_is(RE_ICASE)?
                                                          iswalpha (wc):
                                                          iswupper (wc); break;
                     case CHAR_CLASS_BLANK:  match_flag = iswblank (wc); break;
@@ -1656,7 +1663,7 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
                     char_range_t *range = get_array(cset->ranges, i);
                     wchar_t wc_start = range->wc_start;
                     wchar_t wc_end   = range->wc_end;
-                    if (reg_syntax&RE_ICASE) {
+                    if (syntax_is(RE_ICASE)) {
                         wc_start = towupper(wc_start);
                         wc_end   = towupper(wc_end);
                     }
@@ -1676,12 +1683,12 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
         return 0;
 #else
         *match_len = 1;
-        return cset->chars[(reg_syntax&RE_ICASE)?toupper(*text):*text];
+        return cset->chars[syntax_is(RE_ICASE)?toupper(*text):*text];
 #endif //REG_ENABLE_UTF8
     case PAT_DOT:
         if (text_is_end(text)) return 0;
-        if (!(reg_syntax&RE_DOT_NEWLINE) && *text=='\n') return 0;
-        if ((reg_syntax&RE_DOT_NOT_NULL) && *text=='\0') return 0;
+        if (!syntax_is(RE_DOT_NEWLINE) && *text=='\n') return 0;
+        if (syntax_is(RE_DOT_NOT_NULL) && *text=='\0') return 0;
 #ifdef REG_ENABLE_UTF8
         *match_len = mblen(text, g_text_end-text);
         if (*match_len<0) return 0;
@@ -1752,7 +1759,7 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
         if ((!(g_eflags&REG_NOTEOL) && text_is_end(text)) ||                //textの最後にマッチ
             (g_newline_anchor && !text_is_end(text) && *text=='\n') ||      //'\n'の前の空白文字にマッチ
                                                                             //PCREの$はtextの最後の'\n'にもマッチする
-            ((reg_syntax&RE_PCRE2) && !text_is_end(text) && *text=='\n' && text_is_end(text+1))) {
+            (syntax_is(RE_PCRE2) && !text_is_end(text) && *text=='\n' && text_is_end(text+1))) {
             *match_len = 0; //長さ0にマッチ
             return 1;
         }
