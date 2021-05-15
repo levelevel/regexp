@@ -2,9 +2,12 @@
 
 #ifdef TEST_ENABLE_PCRE2
 
-static uint32_t syntax_gnu2pcre2(int syntax) {
+//RE_*のsyntaxをPCRE2のsyntexに変換する。
+static uint32_t to_pcre2_syntax(int syntax) {
     uint32_t options = 0;
     if (syntax&RE_DOT_NEWLINE)           options |= PCRE2_DOTALL;           //. matches anything including NL
+    if (syntax&RE_COMMENT)               options |= PCRE2_EXTENDED;
+    if (syntax&RE_COMMENT_EXT)           options |= PCRE2_EXTENDED_MORE;
     return options;
 }
 
@@ -22,8 +25,8 @@ int pc_regcomp(void **vpreg, const char *pattern, size_t len, int cflags, int on
 #endif
     if (cflags&REG_ICASE)   options |= PCRE2_CASELESS;  //Do caseless matching
     if (cflags&REG_NEWLINE) options |= PCRE2_MULTILINE; //^ and $ match newlines within data
-    if (on_syntax)          options |=  syntax_gnu2pcre2(on_syntax);
-//  if (off_syntax)         options &= ~syntax_gnu2pcre2(off_syntax);
+    if (on_syntax)          options |=  to_pcre2_syntax(on_syntax);
+//  if (off_syntax)         options &= ~to_pcre2_syntax(off_syntax);
     int errorcode;
     PCRE2_SIZE erroffset;
     pcode = pcre2_compile_8((PCRE2_SPTR8)pattern, len, options, &errorcode, &erroffset, NULL);

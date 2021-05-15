@@ -681,6 +681,11 @@ static reg_stat_t primary_exp(reg_compile_t *preg_compile) {
                    ((reg_syntax&RE_CONTEXT_INDEP_ANCHORS) || preg_compile->regexp==preg_compile->p)) {
             pat = new_pattern(PAT_CARET);
             cont_flag = 1;
+        } else if ((reg_syntax&(RE_COMMENT|RE_COMMENT_EXT)) && token1_in(preg_compile->p, " \t\n\r\f\v#")) {
+            if (*preg_compile->p=='#') {
+                while (!token_is_end(preg_compile->p) && !token1_is(preg_compile->p, '\n')) preg_compile->p++;
+            } else preg_compile->p++;
+            return REG_OK;
         } else {
             L_CHAR:;
 #ifdef REG_ENABLE_UTF8
@@ -1030,6 +1035,8 @@ static reg_stat_t set_char_set(reg_compile_t *preg_compile) {
 #ifdef REG_ENABLE_UTF8
             else         push_char_set_wc(char_set, (wchar_t)c);
 #endif
+        } else if ((reg_syntax&RE_COMMENT_EXT) && token1_in(regexp, " \t")) {
+            ;   //コメント
         } else {
             L_CHAR:;
 #ifdef REG_ENABLE_UTF8

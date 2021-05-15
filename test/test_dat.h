@@ -652,5 +652,15 @@
     {__LINE__, {"abc"},         {"(\\o)"},          {{""}},                 1,-1, REG_PCRE2},//PCRE
     {__LINE__, {"abc"},         {"(\\o|a)"},        {{""}},                 1,-1, REG_PCRE2},//PCRE
 
+//RE_COMMENT
+    {__LINE__, {"abc"},         {"ab \t\r\n\f\vc"}, {{"abc"}},              1, 0, REG_PCRE2,0,RE_COMMENT},
+    {__LINE__, {"abc \t\n"},    {"abc\\ \\\t\\\n"}, {{"abc \t\n"}},         1, 0, REG_PCRE2,0,RE_COMMENT},
+    {__LINE__, {"abc "},        {"( a # comment #\r\n\
+                                    b\tc)"},        {{"abc"},{"abc"}},      2, 0, REG_PCRE2,0,RE_COMMENT},
+    {__LINE__, {"abc"},         {"ab \t\r\n\f\vc"}, {{"abc"}},              1, 0, REG_PCRE2,0,RE_COMMENT_EXT},
+    {__LINE__, {" \tabc\r"},    {"[abc \t\r]+"},    {{"abc\r"}},            1, 0, REG_PCRE2,0,RE_COMMENT_EXT},
+
+
 //  {__LINE__, {"a"},           {"[^a]"},           {{""}},                 1, 1, REG_ERE_PCRE2|REG_DUMP},   //dumpテスト
 //}
+//   no.        text,tlen,       regexp,rlen,        {bstr,len},...         nmatch,expect,cflags,eflags,on_syntax,off_syntax,{start,end}

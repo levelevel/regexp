@@ -76,7 +76,11 @@ extern int reg_syntax;              //syntax
 //PCRE2互換
 //PCER2拡張機能を有効にする。
 //\A,\z
-#define RE_PCRE2                          0x08000000
+#define RE_PCRE2                          0x02000000
+//正規表現中の空白文字、#以降行末までを無視する。ただし[]内は除く。
+#define RE_COMMENT                        0x04000000  //PCRE2_EXTENDED
+//上記に加えて[]内にも適用する。
+#define RE_COMMENT_EXT                    0x08000000  //PCRE2_EXTENDED_MORE
 //'\'による不正なエスケープをエラーとする。
 //指定されていない場合は、次の文字のリテラルとして処理する。
 #define RE_ERROR_UNKNOWN_ESCAPE           0x10000000

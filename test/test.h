@@ -33,8 +33,8 @@ typedef struct {
     int expect;             //戻り値 0:OK, 1:不一致, -1:コンパイルエラー
     int cflags;             //REG_EXTENDED|REG_ICASE|REG_NEWLINE|REG_NOSUB
     int eflags;             //REG_NOTBOL|REG_NOTEOL|REG_STARTEND
-    int on_syntax;          //追加するsyntax
-    int off_syntax;         //削除するsyntax
+    int on_syntax;          //追加するsyntax(RE_*)
+    int off_syntax;         //削除するsyntax(RE_*)
     struct {
         int start;          //検索文字列の開始・終了位置のインデックス(REG_STARTEND指定時)
         int end;            //endが0の場合はtlen
