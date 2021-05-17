@@ -3,7 +3,7 @@
 #ifdef TEST_ENABLE_PCRE2
 
 //RE_*のsyntaxをPCRE2のsyntexに変換する。
-static uint32_t to_pcre2_syntax(int syntax) {
+static uint32_t to_pcre2_syntax(reg_syntax_t syntax) {
     uint32_t options = 0;
     if (syntax&RE_DOT_NEWLINE)           options |= PCRE2_DOTALL;           //. matches anything including NL
     if (syntax&RE_COMMENT)               options |= PCRE2_EXTENDED;
@@ -13,7 +13,7 @@ static uint32_t to_pcre2_syntax(int syntax) {
 
 //パターンをコンパイルする。
 //成功時は0、異常時は0以外を返す。
-int pc_regcomp(void **vpreg, const char *pattern, size_t len, int cflags, int on_syntax, int off_syntax) {
+int pc_regcomp(void **vpreg, const char *pattern, size_t len, int cflags, reg_syntax_t on_syntax, reg_syntax_t off_syntax) {
     (void)off_syntax;
     int ret = 0;
     pcre2_code_8 *pcode = NULL;

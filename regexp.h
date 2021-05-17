@@ -1,6 +1,7 @@
 #pragma once
 
 #include <regex.h>
+#include <stdint.h>
 
 #define REG_ENABLE_UTF8    //UTF-8対応
 
@@ -52,7 +53,8 @@ typedef enum {
     //ここからはPCRE2から流用
     REG_ERR_CODE_CTRL_C_AT_END            = 102,   //\c at end of pattern
     REG_ERR_CODE_UNKNOWN_ESCAPE           = 103,
-    REG_ERR_CODE_UNRECOGNIZED_CHAR_PAREN  = 111,   //(111), unrecognized character after (? or (?-
+    REG_ERR_CODE_UNRECOGNIZED_CHAR_PAREN  = 111,   //unrecognized character after (? or (?-
+    REG_ERR_CODE_LOOKBEHIND_NOT_FIXLEN    = 125,   //lookbehind assertion is not fixed length
     REG_ERR_CODE_CODE_POINT_TOO_LARGE     = 134,   //character code point value in \x{} or \o{} is too large
     REG_ERR_CODE_INVALID_UNICODE          = 137,   //PCRE2 does not support \F, \L, \l, \N{name}, \U, or \u
     REG_ERR_CODE_SYNTAX_ERR_IN_SUBPTN_NAME= 142,   //syntax error in subpattern name (missing terminator?)
@@ -62,6 +64,7 @@ typedef enum {
     REG_ERR_CODE_NON_HEX_CHAR             = 167,   //non-hex character in \x{} (closing brace missing?)
     REG_ERR_CODE_NOT_PRINTABLE_ASCII      = 168,   //\c must be followed by a printable ASCII character
     REG_ERR_CODE_DIGITS_MISSING           = 178,   //digits missing in \x{} or \o{} or \N{U+}
+    REG_ERR_CODE_INVALID_HYPHEM_IN_OPTION = 194,   //invalid hyphen in option setting
 } reg_err_code_t;
 
 //エラー情報
@@ -70,26 +73,31 @@ typedef struct {
     const char    *err_msg;     //エラーメッセージ
 } reg_err_info_t;
 
+//typedef unsigned long int reg_syntax_t;    //regex.hで定義(64bit)
+
 extern reg_err_info_t reg_err_info; //エラー情報
-extern int reg_syntax;              //syntax
+extern reg_syntax_t reg_syntax;     //syntax
+
+//REG_NEWLINE相当（regexのnewline_anchor）
+#define RE_MULTILINE                      0x0001000000000000LL
 
 //PCRE2互換
 //PCER2拡張機能を有効にする。
 //\A,\z
-#define RE_PCRE2                          0x02000000
+#define RE_PCRE2                          0x0002000000000000LL
 //正規表現中の空白文字、#以降行末までを無視する。ただし[]内は除く。
-#define RE_COMMENT                        0x04000000  //PCRE2_EXTENDED
+#define RE_COMMENT                        0x0004000000000000LL  //PCRE2_EXTENDED
 //上記に加えて[]内にも適用する。
-#define RE_COMMENT_EXT                    0x08000000  //PCRE2_EXTENDED_MORE
+#define RE_COMMENT_EXT                    0x0008000000000000LL  //PCRE2_EXTENDED_MORE
 //'\'による不正なエスケープをエラーとする。
 //指定されていない場合は、次の文字のリテラルとして処理する。
-#define RE_ERROR_UNKNOWN_ESCAPE           0x10000000
+#define RE_ERROR_UNKNOWN_ESCAPE           0x0010000000000000LL
 //"a**"のような繰り返し指定の連続をエラーとする。
-#define RE_ERROR_DUP_REPEAT               0x20000000
+#define RE_ERROR_DUP_REPEAT               0x0020000000000000LL
 //"[a-]"のような-をリテラルとして扱う。
-#define RE_ALLOW_UNBALANCED_MINUS_IN_LIST 0x40000000
+#define RE_ALLOW_UNBALANCED_MINUS_IN_LIST 0x0040000000000000LL
 //"a{1b}"のような不正な繰り返し指定を単なるリテラル文字列として扱う。
-#define RE_ALLOW_ILLEGAL_REPEAT           0x80000000
+#define RE_ALLOW_ILLEGAL_REPEAT           0x0080000000000000LL
 
 #define RE_SYNTAX_PCRE  ((RE_SYNTAX_POSIX_EXTENDED|\
    RE_NO_GNU_OPS|RE_PCRE2|RE_ERROR_UNKNOWN_ESCAPE|RE_ERROR_DUP_REPEAT|RE_ALLOW_UNBALANCED_MINUS_IN_LIST|RE_ALLOW_ILLEGAL_REPEAT)\
@@ -124,7 +132,7 @@ reg_compile_t* reg_compile (const char *regexp, size_t len, size_t *nsub, int cf
 // - RE_SYNTAX_POSIX_MINIMAL_EXTENDED
 // - RE_SYNTAX_PCRE                    # PCRE互換拡張
 //各ビットの詳細は/usr/include/regex.hを参照。ただし定義されているすべての機能を実装しているわけではない。
-reg_compile_t* reg_compile2(const char *regexp, size_t len, size_t *nsub, int cflags, int syntax);
+reg_compile_t* reg_compile2(const char *regexp, size_t len, size_t *nsub, int cflags, reg_syntax_t syntax);
 
 //reg_compileでコンパイルした結果をもとに、文字列text（長さlenのバイト列）を検索する。
 //lenに負の値を指定すると、textをNUL終端の文字列として処理する。
@@ -150,4 +158,4 @@ void reg_print_str(FILE *fp, const char *bstr, int len);
 //文字列は各関数内の静的領域を指している。
 const char* reg_cflags2str(int cflags);
 const char* reg_eflags2str(int eflags);
-const char* reg_syntax2str(int syntax);
+const char* reg_syntax2str(reg_syntax_t syntax);

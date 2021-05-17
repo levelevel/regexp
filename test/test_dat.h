@@ -350,12 +350,14 @@
     {__LINE__, {"abc"},         {"(?<=a)bc"},       {{"bc"}},               1, 0, REG_PCRE2},
 //  {__LINE__, {"@abc"},        {"@(?<=a)bc"},      {{""}},                 1, 1, REG_PCRE2},   //PCRE2では"bc"にならない
     {__LINE__, {"abc"},         {"(?<=z)bc"},       {{""}},                 1, 1, REG_PCRE2},
-//  {__LINE__, {"aabc"},        {"(?<=a*)bc"},      {{""}},                 1,-1, REG_PCRE2},   //固定長でない場合はエラー
     {__LINE__, {"abc"},         {"(?<!d)bc"},       {{"bc"}},               1, 0, REG_PCRE2},
+    {__LINE__, {"abc"},         {"(?<!b)bc"},       {{"bc"}},               1, 0, REG_PCRE2},
     {__LINE__, {"abc"},         {"(?<!a)bc"},       {{""}},                 1, 1, REG_PCRE2},
 //    {__LINE__, {"abc"},         {"(?<=.)(?<!z)bc"}, {{"bc"}},               1, 0, REG_PCRE2},
     {__LINE__, {"abc"},         {"(?<=d|a)bc"},     {{"bc"}},               1, 0, REG_PCRE2},
     {__LINE__, {"abc"},         {"(?<=de|a)bc"},    {{"bc"}},               1, 0, REG_PCRE2},
+    {__LINE__, {"abc"},         {"(?<a*)bc"},       {{""}},                 1,-1, REG_PCRE2},   //固定長でない場合はエラー
+    {__LINE__, {"abc"},         {"(?<!b*)bc"},      {{""}},                 1,-1, REG_PCRE2},
 
     {__LINE__, {"abc"},         {"a\\Kbc"},         {{"bc"}},               1, 0, REG_PCRE2},
     {__LINE__, {"abc"},         {"(a)\\Kbc"},       {{"bc"},{"a"}},         2, 0, REG_PCRE2},
@@ -435,13 +437,13 @@
     {__LINE__, {"ab\n\n"},      {"b$"},             {{""}},                 1, 1, REG_PCRE2},   //         行末の\n\nにはマッチしない
     {__LINE__, {"ab\n"},        {"b\\Z"},           {{"b"}},                1, 0, REG_PCRE2},   //PCREの\Zは行末の\nにマッチする
     {__LINE__, {"ab\n"},        {"b\\z"},           {{""}},                 1, 1, REG_PCRE2},   //PCREの\zは行末の\nにマッチしない
-    {__LINE__, {"ab\n"},        {"b$"},             {{"b"}},                1, 0, REG_ALL|REG_NEWLINE},
+    {__LINE__, {"ab\n"},        {"b$"},             {{"b"}},                1, 0, REG_ALL  |REG_NEWLINE},
     {__LINE__, {"ab\n"},        {"b\\Z"},           {{"b"}},                1, 0, REG_PCRE2|REG_NEWLINE},
     {__LINE__, {"ab\n"},        {"b\\z"},           {{""}},                 1, 1, REG_PCRE2|REG_NEWLINE},
 
-    {__LINE__, {"ab\nxy"},      {"\\(^x\\)y"},      {{"xy"},{"x"}},         2, 0, REG_BRE   |REG_NEWLINE},
+    {__LINE__, {"ab\nxy"},      {"\\(^x\\)y"},      {{"xy"},{"x"}},         2, 0, REG_BRE      |REG_NEWLINE},
     {__LINE__, {"ab\nxy"},      {"(^x)y"},          {{"xy"},{"x"}},         2, 0, REG_ERE_PCRE2|REG_NEWLINE},
-    {__LINE__, {"ab\nxy"},      {"\\(b$\\)\nx"},    {{"b\nx"},{"b"}},       2, 0, REG_BRE   |REG_NEWLINE},
+    {__LINE__, {"ab\nxy"},      {"\\(b$\\)\nx"},    {{"b\nx"},{"b"}},       2, 0, REG_BRE      |REG_NEWLINE},
     {__LINE__, {"ab\nxy"},      {"(b$)\nx"},        {{"b\nx"},{"b"}},       2, 0, REG_ERE_PCRE2|REG_NEWLINE},
     {__LINE__, {"ab\nxy"},      {"^(x)y"},          {{"xy"},{"x"}},         2, 0, REG_ERE_PCRE2|REG_NEWLINE},
     {__LINE__, {"ab\nxy"},      {"(b)$"},           {{"b"},{"b"}},          2, 0, REG_ERE_PCRE2|REG_NEWLINE},
@@ -460,7 +462,7 @@
     {__LINE__, {"ab\nxy"},      {"ab$|az$"},        {{"ab"}},               1, 0, REG_ERE_PCRE2|REG_NEWLINE},
     {__LINE__, {"ab\nxy"},      {"(ab|az)$"},       {{"ab"},{"ab"}},        2, 0, REG_ERE_PCRE2|REG_NEWLINE},
     {__LINE__, {"ab\nxy"},      {"(ab$|az$)"},      {{"ab"},{"ab"}},        2, 0, REG_ERE_PCRE2|REG_NEWLINE},
-    {__LINE__, {"0ab\nxy"},     {"^(0(ab$|az$))"},  {{"0ab"},{"0ab"},{"ab"}},3, 0, REG_ERE_PCRE2|REG_NEWLINE},
+    {__LINE__, {"0ab\nxy"},     {"^(0(ab$|az$))"}, {{"0ab"},{"0ab"},{"ab"}},3, 0, REG_ERE_PCRE2|REG_NEWLINE},
 
     {__LINE__, {"ab\nxy"},      {"ab."},            {{"ab\n"}},             1, 0, REG_GNU},             //GNUでは.は\nにマッチする
     {__LINE__, {"ab\nxy"},      {"ab."},            {{""}},                 1, 1, REG_PCRE2,0,0,RE_DOT_NEWLINE},    //PCRE2では.は\nにマッチしない
@@ -659,6 +661,49 @@
                                     b\tc)"},        {{"abc"},{"abc"}},      2, 0, REG_PCRE2,0,RE_COMMENT},
     {__LINE__, {"abc"},         {"ab \t\r\n\f\vc"}, {{"abc"}},              1, 0, REG_PCRE2,0,RE_COMMENT_EXT},
     {__LINE__, {" \tabc\r"},    {"[abc \t\r]+"},    {{"abc\r"}},            1, 0, REG_PCRE2,0,RE_COMMENT_EXT},
+//OPTION
+    {__LINE__, {"aBc"},         {"a(?i)bC"},        {{"aBc"}},              1, 0, REG_PCRE2},
+    {__LINE__, {"aBc"},         {"a(?^i)bC"},       {{"aBc"}},              1, 0, REG_PCRE2},
+    {__LINE__, {"aBc"},         {"a(?i)(bC)"},      {{"aBc"},{"Bc"}},       2, 0, REG_PCRE2},
+    {__LINE__, {"aBc"},         {"a((?i)b)C"},      {{""}},                 1, 1, REG_PCRE2},
+    {__LINE__, {"aBc"},         {"a((?i)b)c"},      {{"aBc"},{"B"}},        2, 0, REG_PCRE2},
+    {__LINE__, {"aBc"},         {"(?i)bb|bc"},      {{"Bc"}},               1, 0, REG_PCRE2},   //オプションは|をまたいて有効
+    {__LINE__, {"aBc"},         {"((?i)bb|bc)"},    {{"Bc"},{"Bc"}},        1, 0, REG_PCRE2},   //オプションは|をまたいて有効
+    {__LINE__, {"aBc"},         {"BC|(?i)c"},       {{"c"}},                1, 0, REG_PCRE2},
+    {__LINE__, {"aBaB"},        {"(A|(?i)B)+"},     {{"B"},{"B"}},          2, 0, REG_PCRE2},
+    {__LINE__, {"aBaB"},        {"((?i)A|B)+"},     {{"aBaB"},{"B"}},       2, 0, REG_PCRE2},
+    {__LINE__, {"aBc"},         {"(?i)a(?-i)bC"},   {{""}},                 1, 1, REG_PCRE2},
+    {__LINE__, {"aBc"},         {"(?i-i)abC"},      {{""}},                 1, 1, REG_PCRE2},
+    {__LINE__, {"aBc"},         {"a(?-i)bC"},       {{""}},                 1, 1, REG_PCRE2|REG_ICASE},
+    {__LINE__, {"aBc"},         {"((?-i)a)bC"},     {{"aBc"},{"a"}},        2, 0, REG_PCRE2|REG_ICASE},
+    {__LINE__, {"ab\nxy"},      {"(?m)^x"},         {{"x"}},                1, 0, REG_PCRE2},
+    {__LINE__, {"ab\nxy"},      {"(?-m)^x"},        {{""}},                 1, 1, REG_PCRE2|REG_NEWLINE},
+    {__LINE__, {"ab\nxy"},      {"(?m)b$"},         {{"b"}},                1, 0, REG_PCRE2},
+    {__LINE__, {"ab\nxy"},      {"(?-m)b$"},        {{""}},                 1, 1, REG_PCRE2|REG_NEWLINE},
+    {__LINE__, {"ab\nxy"},      {"(?s)ab."},        {{"ab\n"}},             1, 0, REG_PCRE2},  //シングルラインモード(dotall)
+    {__LINE__, {"ab\nxy"},      {"(?-s)ab."},       {{""}},                 1, 1, REG_PCRE2},  //非シングルラインモード
+    {__LINE__, {"abc"},         {"(?x)ab c"},       {{"abc"}},              1, 0, REG_PCRE2},
+    {__LINE__, {"abc"},         {"(?-x)ab c"},      {{""}},                 1, 1, REG_PCRE2,0,RE_COMMENT},
+    {__LINE__, {"abc"},         {"(?-xx)ab c"},     {{""}},                 1, 1, REG_PCRE2,0,RE_COMMENT},
+    {__LINE__, {" abc "},       {"(?xx)[abc ]+"},   {{"abc"}},              1, 0, REG_PCRE2},
+    {__LINE__, {" abc "},       {"(?-xx)[abc ]+"},  {{" abc "}},            1, 0, REG_PCRE2,0,RE_COMMENT_EXT},
+    {__LINE__, {" abc "},       {"(?-x)[abc ]+"},   {{" abc "}},            1, 0, REG_PCRE2,0,RE_COMMENT_EXT},
+    {__LINE__, {"aBc"},         {"(?i"},            {{""}},                 1,-1, REG_PCRE2},
+    {__LINE__, {"aBc"},         {"(?ij)"},          {{""}},                 1,-1, REG_PCRE2},
+    {__LINE__, {"aBc"},         {"(?-i-m)"},        {{""}},                 1,-1, REG_PCRE2},   //-は1回のみ
+    {__LINE__, {"aBc"},         {"(?^-m)"},         {{""}},                 1,-1, REG_PCRE2},   //^と-は併用不可
+    {__LINE__, {"aBc"},         {"(?i^)"},          {{""}},                 1,-1, REG_PCRE2},   //^は先頭のみ
+    {__LINE__, {"aBc"},         {"(?^^)"},          {{""}},                 1,-1, REG_PCRE2},   //^は先頭のみ
+//OPTION (?ims:...)
+    {__LINE__, {"aBc"},         {"a(?i:bC)"},       {{"aBc"}},              1, 0, REG_PCRE2},
+
+//ATOMIC
+    {__LINE__, {"1234abc"},     {"\\d+abc"},        {{"1234abc"}},          1, 0, REG_PCRE2},
+    {__LINE__, {"1234abc"},     {"\\d++4abc"},      {{""}},                 1, 1, REG_PCRE2},
+//    {__LINE__, {"1234abc"},     {"(?>\\d+)4abc"},   {{""}},                 1, 1, REG_PCRE2},
+
+//NeedToBeFix
+//    {__LINE__, {"abaabb"},      {"(a|aa)bb"},       {{"aabb"},{"aa"}},      2, 0, REG_PCRE2},
 
 
 //  {__LINE__, {"a"},           {"[^a]"},           {{""}},                 1, 1, REG_ERE_PCRE2|REG_DUMP},   //dumpテスト

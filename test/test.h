@@ -33,8 +33,8 @@ typedef struct {
     int expect;             //戻り値 0:OK, 1:不一致, -1:コンパイルエラー
     int cflags;             //REG_EXTENDED|REG_ICASE|REG_NEWLINE|REG_NOSUB
     int eflags;             //REG_NOTBOL|REG_NOTEOL|REG_STARTEND
-    int on_syntax;          //追加するsyntax(RE_*)
-    int off_syntax;         //削除するsyntax(RE_*)
+    reg_syntax_t on_syntax; //追加するsyntax(RE_*)
+    reg_syntax_t off_syntax;//削除するsyntax(RE_*)
     struct {
         int start;          //検索文字列の開始・終了位置のインデックス(REG_STARTEND指定時)
         int end;            //endが0の場合はtlen
@@ -52,13 +52,13 @@ extern reg_err_info_t ref_err_info; //リファレンス(GNU/PCRE2)のエラー�
 
 extern int use_posix_version;
 
-int gnu_regcomp (void *preg, const char *pattern, size_t len, int cflags, int on_syntax, int off_syntax, size_t *nmatch);
+int gnu_regcomp (void *preg, const char *pattern, size_t len, int cflags, reg_syntax_t on_syntax, reg_syntax_t off_syntax, size_t *nmatch);
 int gnu_regexec (void *preg, const char *string, size_t len, size_t nmatch, regmatch_t pmatch[], test_t *test);
 void gnu_dump(regex_t *preg);
 regex_t *gnu_alloc_regex(void);
 void gnu_free_regex(regex_t *preg);
 
-int pc_regcomp(void **preg, const char *pattern, size_t len, int cflags, int on_syntax, int off_syntax);
+int pc_regcomp(void **preg, const char *pattern, size_t len, int cflags, reg_syntax_t on_syntax, reg_syntax_t off_syntax);
 int pc_regexec(void *preg, const char *string, size_t len, size_t *nmatch, regmatch_t **pmatch, test_t *test);
 void pc_dump(pcre2_code_8 *pcode);
 void pc_free_regex(pcre2_code_8 *pcode);

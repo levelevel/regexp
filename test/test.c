@@ -45,7 +45,7 @@ static int test_regexp(test_t *test) {
         assert(test->end>=test->start);
     }
 
-    //regex
+    //regex/PCRE2: リファレンス関数の実行
     void *void_preg = NULL;
     regmatch_t *pmatch1 = NULL;     //GNU/PCRE2共通の構造体
     size_t nmatch1 = 0;
@@ -79,8 +79,8 @@ static int test_regexp(test_t *test) {
     regmatch_t *pmatch2 = NULL;
     size_t nmatch2 = 0;
     if (test->on_syntax || test->off_syntax || !use_gnu_version) {
-        int syntax = RE_SYNTAX_POSIX_BASIC;
-        if (!use_gnu_version)                      syntax = RE_SYNTAX_PCRE;
+        reg_syntax_t syntax = RE_SYNTAX_POSIX_BASIC;
+        if (!use_gnu_version)                 syntax = RE_SYNTAX_PCRE;
         else if (test->cflags & REG_EXTENDED) syntax = RE_SYNTAX_POSIX_EXTENDED;
         syntax |= test->on_syntax;
         syntax &= ~test->off_syntax;
@@ -175,7 +175,7 @@ static int test_regexp(test_t *test) {
     return result;
 }
 
-static int test_bstr(void) {
+static int test_main(void) {
     int cnt = 0;
     int err_cnt = 0;
     int bre_cnt = 0;
@@ -251,7 +251,7 @@ int main(void) {
     setlocale(LC_ALL, "");          //環境変数に沿ってロケールを設定する
     setlocale(LC_MESSAGES, "C");    //メッセージは英語とする
     int cnt = 0;
-    cnt += test_bstr();
+    cnt += test_main();
     cnt += test_misc();
     return !(cnt==0);
 }

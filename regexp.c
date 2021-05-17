@@ -195,7 +195,6 @@ typedef enum {
     PAT_WORD_DELIM,     // \b
     PAT_NOT_WORD_DELIM, // \B
     PAT_SET_OPTION,     //syntaxをセットする
-    PAT_UNSET_OPTION,   //syntaxをアンセットする
     PAT_NULL,           //パターン配列の終わり
 } pattern_type_t;
 
@@ -204,7 +203,7 @@ static const char *pattern_type_str[] = {
     "PAT_SUBREG", "PAT_BACKREF", "PAT_OR", "PAT_CARET", "PAT_DOLLAR",
     "PAT_TEXT_FIRTS", "PAT_TEXT_LAST", "PAT_TEXT_LAST_NL", "PAT_SET_START",
     "PAT_WORD_FIRST", "PAT_WORD_LAST", "PAT_WORD_DELIM", "PAT_NOT_WORD_DELIM",
-    "PAT_NULL"
+    "PAT_SET_OPTION", "PAT_NULL"
 };
 
 #ifdef REG_ENABLE_UTF8
@@ -257,7 +256,10 @@ typedef struct {
         reg_compile_t *regcomp; //type=PAT_SUBREG
         int ref_num;        //type=PAT_BACKREF, 1-9
         array_t *or_array;  //type=PAT_OR, regcomp_t*のarray
-        int syntax;         //type=PAT_SET_OPTION/PAT_UNSET_OPTION
+        struct {
+            reg_syntax_t set_syntax; //type=PAT_SET_OPTION
+            reg_syntax_t unset_syntax;
+        };
     };
 } pattern_t;
 
@@ -265,14 +267,18 @@ typedef struct {
 typedef struct regcomp {
     array_t *array;         //pattern_t*のアレイ
     unsigned int match_here :1;     //現在位置からマッチさせる
-    unsigned int newline_anchor:1;  //\nをアンカーとする（^/$にマッチする）
     short nparen;           //()の数（0-9）
     short ref_num;          //SUBREGの場合の後方参照の番号（0-9）
-    short assertion;
+    short assertion;        //LOOKAHEAD,LOOKBEHIND
+    int total_len;          //このパターン全体の長さ。NEGATIVE_LOOKBEHINDで使用。
     int backref_flags;      //(1 << n)ビットが1なら\nによる後方参照対象がこのsubreg内に存在する
     int cflags;             //正規表現のコンパイルフラグ(REG_EXTENDED|...)
     int eflags;             //正規表現の実行フラグ(REG_NOTBOL|...)
-    int syntax;             //正規表現のsyntax。RE_*
+    reg_syntax_t syntax;    //正規表現のsyntax。RE_*
+    struct {
+        reg_syntax_t set_syntax; //SET_OPTION
+        reg_syntax_t unset_syntax;//UNSET_OTION
+    };
     //コンパイル時の作業用
     const char *regexp;     //コンパイル時に指定された正規表現
     int rlen;               //regexpの長さ
@@ -280,6 +286,17 @@ typedef struct regcomp {
     pattern_t *prev_pat;    //直前のパターン
     pattern_type_t mode;    //処理中のパターン（PAT_SUBREG:"\)"が終了）
 } reg_compile_t;
+
+//先読み・後読みアサーション
+enum {
+    POSITIVE_LOOKAHEAD = 1,
+    NEGATIVE_LOOKAHEAD,
+    POSITIVE_LOOKBEHIND,
+    NEGATIVE_LOOKBEHIND,
+};
+static const char* assertion_str[] = {
+    "", "POSITIVE_LOOKAHEAD", "NEGATIVE_LOOKAHEAD", "POSITIVE_LOOKBEHIND", "NEGATIVE_LOOKBEHIND",
+};
 
 //関数の戻り値
 typedef enum {
@@ -290,12 +307,14 @@ typedef enum {
 
 static pattern_t *new_pattern(pattern_type_t type);
 static reg_compile_t *new_reg_compile(void);
-static reg_compile_t *reg_exp     (const char *regexp, pattern_type_t mode);
+static reg_compile_t *reg_exp(const char *regexp, pattern_type_t mode);
 static reg_compile_t *sequence_exp(const char *regexp, pattern_type_t mode);
 static reg_stat_t repeat_exp  (reg_compile_t *preg_compile);
 static reg_stat_t primary_exp (reg_compile_t *preg_compile);
 static reg_stat_t set_backref(reg_compile_t *preg_compile);
 static reg_stat_t set_subreg  (reg_compile_t *preg_compile);
+static int get_length(reg_compile_t *preg_compile);
+static reg_stat_t set_options(reg_compile_t *preg_compile, reg_syntax_t* set_syntax, reg_syntax_t* unset_syntax);
 static reg_stat_t set_repeat  (reg_compile_t *preg_compile);
 static void push_char(reg_compile_t *preg_compile, int c);
 static void push_char_set(char_set_t *char_set, unsigned char c);
@@ -325,8 +344,8 @@ static int reg_mblen(const char *str, int str_len);
 #define MAX_PAREN 9
 static int g_nparen;            //()の数(0-9)
 
-int reg_syntax;                 //syntax (RE_*)
-#define syntax_is(b)      (reg_syntax&(b))
+reg_syntax_t reg_syntax;        //syntax (RE_*)
+#define syntax_is(b)        (reg_syntax&(b))
 
 static const char* g_regexp_end;//regexpの末尾の次の位置
 #define token_is_end(p)     ((p)>=g_regexp_end)
@@ -347,18 +366,20 @@ static const char* g_regexp_end;//regexpの末尾の次の位置
 #define token_is_xdigit(p)      isxdigit(*(p))
 #define token_len(p)            (g_regexp_end-(p))
 
+#define error_if_token_end(p,code)  if (token_is_end(p)) {reg_set_err(code); return REG_ERR;}
+
 // reg_compile: compile regexp
 // reg_exp      = sequence_exp ( "|" sequence_exp )*                            ERE
 //              | "^"? sequence_exp* "$"?                                   BRE
 // sequence_exp = repeat_exp repeat_exp*                                    BRE/ERE
 //バイト列版。lenが負の場合は文字列として扱う。
 reg_compile_t* reg_compile(const char *regexp, size_t len, size_t *nsub, int cflags) {
-    int syntax;
+    reg_syntax_t syntax;
     syntax = ((cflags & REG_EXTENDED) ? RE_SYNTAX_POSIX_EXTENDED : RE_SYNTAX_POSIX_BASIC);
     return reg_compile2(regexp, len, nsub, cflags, syntax);
 }
 //reg_compileと同じであるが、cflagsのREG_EXTENDEDの有無による機能の変更は無効になり、代わりにsyntaxを指定する。
-reg_compile_t* reg_compile2(const char *regexp, size_t len, size_t *nsub, int cflags, int syntax) {
+reg_compile_t* reg_compile2(const char *regexp, size_t len, size_t *nsub, int cflags, reg_syntax_t syntax) {
     if (regexp==NULL) {
         reg_set_err(1);
         return NULL;
@@ -371,6 +392,7 @@ reg_compile_t* reg_compile2(const char *regexp, size_t len, size_t *nsub, int cf
         syntax |= RE_ICASE;                 //ignore case
     }
     if (cflags&REG_NEWLINE) {
+        syntax |= RE_MULTILINE;             //マルチラインモード
         syntax &= ~RE_DOT_NEWLINE;          //.を\nにマッチさせない
         syntax |= RE_HAT_LISTS_NOT_NEWLINE; //[^...]を\nにマッチさせない
     }
@@ -380,8 +402,6 @@ reg_compile_t* reg_compile2(const char *regexp, size_t len, size_t *nsub, int cf
         if (nsub) *nsub = g_nparen;
         preg_compile->nparen = g_nparen;
         preg_compile->cflags = cflags;
-        preg_compile->syntax = reg_syntax;
-        if (cflags&REG_NEWLINE) preg_compile->newline_anchor = 1;
     }
 
     return preg_compile;
@@ -736,17 +756,6 @@ static reg_stat_t set_backref(reg_compile_t *preg_compile) {
     return REG_OK;
 }
 
-#define error_if_token_end(p,code)            if (token_is_end(p)) {reg_set_err(code); return REG_ERR;}
-//先読み・後読みアサーション
-enum {
-    POSITIVE_LOOKAHEAD = 1,
-    NEGATIVE_LOOKAHEAD,
-    POSITIVE_LOOKBEHIND,
-    NEGATIVE_LOOKBEHIND,
-};
-static const char* assertion_str[] = {
-    "", "POSITIVE_LOOKAHEAD", "NEGATIVE_LOOKAHEAD", "POSITIVE_LOOKBEHIND", "NEGATIVE_LOOKBEHIND",
-};
 // set_subreg: \(\)の中身を抽出する
 static reg_stat_t set_subreg(reg_compile_t *preg_compile) {
     const char *regexp = preg_compile->p;
@@ -755,6 +764,8 @@ static reg_stat_t set_subreg(reg_compile_t *preg_compile) {
     error_if_token_end(regexp, REG_ERR_CODE_UNMATCHED_PAREN);
     int ref_num = 0;
     int assertion = 0;
+    reg_syntax_t set_syntax = 0;
+    reg_syntax_t unset_syntax = 0;
 
     if (syntax_is(RE_PCRE2) && token1_is(regexp, '?')) {
         regexp++;
@@ -787,6 +798,36 @@ static reg_stat_t set_subreg(reg_compile_t *preg_compile) {
             }
             ref_num = -1;
             break;
+        case 'i':           //"(?i)"
+        case 'm':           //"(?m)"
+        case 's':           //"(?s)"
+        case 'n':           //"(?n)"
+        case 'x':           //"(?x)", "(?xx)"
+        case 'U':           //"(?U)"
+        case '^':           //"(?^)"
+        case '-':           //"(?-...)"
+            preg_compile->p = regexp;
+            switch (set_options(preg_compile, &set_syntax, &unset_syntax)) {
+            case REG_ERR:
+                return REG_ERR;
+            case REG_END:
+            {
+                pattern_t *pat = new_pattern(PAT_SET_OPTION);
+                pat->set_syntax = set_syntax;
+                if (unset_syntax&(RE_COMMENT|RE_COMMENT_EXT)) unset_syntax |= RE_COMMENT|RE_COMMENT_EXT;    //Unsetting x or xx unsets both.
+                pat->unset_syntax = unset_syntax;
+
+                reg_syntax |= set_syntax;
+                reg_syntax &= ~unset_syntax;
+                push_pattern(preg_compile, pat);
+                return REG_OK;
+            }
+            case REG_OK:    //"(?i:...)"
+                break;
+            }
+            ref_num = -1;
+            regexp = preg_compile->p;
+            break;
         default:
             reg_set_err(REG_ERR_CODE_UNRECOGNIZED_CHAR_PAREN);
             return REG_ERR;
@@ -798,19 +839,118 @@ static reg_stat_t set_subreg(reg_compile_t *preg_compile) {
         ref_num = g_nparen;
     }
 
+    reg_syntax_t org_syntax = reg_syntax;       //reg_syntax保存
     pattern_t *pat = new_pattern(PAT_SUBREG);
+    reg_syntax |= set_syntax;
+    reg_syntax &= ~unset_syntax;
     pat->regcomp = reg_exp(regexp, PAT_SUBREG);
+    reg_syntax = org_syntax;                    //reg_syntax復元
     if (pat->regcomp==NULL) {
         reg_pattern_free(pat);
         return REG_ERR;
     }
+    pat->regcomp->set_syntax   = set_syntax;
+    pat->regcomp->unset_syntax = unset_syntax;
+    pat->regcomp->syntax |= set_syntax;
+    pat->regcomp->syntax &= ~unset_syntax;
     pat->regcomp->match_here = 1;
     push_pattern(preg_compile, pat);
     preg_compile->p = pat->regcomp->p;
     pat->regcomp->ref_num = ref_num;
     pat->regcomp->assertion = assertion;
+    if (assertion==POSITIVE_LOOKBEHIND || assertion==NEGATIVE_LOOKBEHIND) {
+        pat->regcomp->total_len = get_length(pat->regcomp);
+        if (pat->regcomp->total_len<0) {
+            reg_set_err(REG_ERR_CODE_LOOKBEHIND_NOT_FIXLEN);
+            return REG_ERR;
+        }
+    }
     preg_compile->backref_flags |= pat->regcomp->backref_flags;
     if (ref_num>0) preg_compile->backref_flags |= (1 << ref_num);
+    return REG_OK;
+}
+
+static int get_length(reg_compile_t *preg_compile) {
+    int match_len = 0;
+    int len;
+    int size = num_array(preg_compile->array);
+    for (int i=0; i<size; i++) {
+        pattern_t *pat = peek_array(preg_compile->array, i);
+        switch (pat->type) {
+        case PAT_CHAR:
+        case PAT_CHARSET:
+        case PAT_DOT:
+            match_len += 1; break;
+        case PAT_WC:
+            len = wcrtomb(NULL, pat->wc, NULL);
+            if (len>0) match_len += len;
+            else return -1;
+            break;
+        case PAT_SUBREG:
+            len = get_length(pat->regcomp);
+        case PAT_REPEAT:
+            return -1;
+        default:
+            break;
+        }
+    }
+    return match_len;
+}
+
+//(?i)などのオプションを設定する。
+static reg_stat_t set_options(reg_compile_t *preg_compile, reg_syntax_t* set_syntax, reg_syntax_t* unset_syntax) {
+    int set_mode = 1;
+    int reset_flag = 0;
+    while (1) {
+        error_if_token_end(preg_compile->p, REG_ERR_CODE_UNMATCHED_PAREN);
+        int c = *preg_compile->p++;
+        reg_syntax_t syntax = 0;
+        switch (c) {
+        case 'i':           //"(?i)"
+            syntax = RE_ICASE; break;
+        case 'm':           //"(?m)"
+            syntax = RE_MULTILINE; break;
+        case 's':           //"(?s)"
+            syntax = RE_DOT_NEWLINE; break;
+//      case 'n':           //"(?n)"
+//          break;
+        case 'x':           //"(?x)", "(?xx)"
+            if (!token_is_end(preg_compile->p) && token1_is(preg_compile->p, 'x')) {
+                syntax = RE_COMMENT_EXT;
+                preg_compile->p++;
+            } else syntax = RE_COMMENT;
+            break;
+//      case 'U':           //"(?U)"
+//          break;
+        case '^':           //"(?^)"
+            if (*set_syntax || *unset_syntax) {
+                reg_set_err(REG_ERR_CODE_UNRECOGNIZED_CHAR_PAREN);
+                return REG_ERR;
+            }
+            reset_flag = 1;
+            *unset_syntax = RE_ICASE|RE_MULTILINE|RE_DOT_NEWLINE|RE_COMMENT|RE_COMMENT_EXT;
+            continue;
+        case '-':           //"(?-...)"
+            if (set_mode==0 || reset_flag) {
+                reg_set_err(REG_ERR_CODE_INVALID_HYPHEM_IN_OPTION);
+                return REG_ERR;
+            }
+            set_mode = 0;
+            continue;
+        case ':':           //"(?i:...)"
+            preg_compile->p--;
+            return REG_OK;
+        case ')':
+            return REG_END;
+        default:
+            reg_set_err(REG_ERR_CODE_UNRECOGNIZED_CHAR_PAREN);
+            return REG_ERR;
+        }
+        if (set_mode) {
+            *set_syntax   |= syntax;
+            *unset_syntax &= ~syntax;
+        } else *unset_syntax |= syntax;
+    }
     return REG_OK;
 }
 
@@ -1429,7 +1569,6 @@ static int get_escape_char(reg_compile_t *preg_compile, int enable_backref) {
 static const char* g_text_org;  //オリジナル検索文字列（reg_exec関数のtext引数）
 static const char *g_text_start;//検索文字列の先頭（^にマッチさせる位置）
 static const char *g_text_end;  //検索文字列の末尾の次の位置（文字列の終了判定に用いる）（$にマッチさせる位置）
-static int g_newline_anchor;    //\nをアンカーとする（^/$にマッチする、マルチラインモード）
 static const char *g_text_match_start;  //全体のマッチ開始位置（\K,lookbehindで変更される）。
 static size_t      g_nmatch;    //pmatchの要素数              （reg_exec関数のnmatch引数）
 static regmatch_t *g_pmatch;    //マッチング位置を格納する配列（reg_exec関数のpmatch引数）
@@ -1450,7 +1589,6 @@ int reg_exec(reg_compile_t *preg_compile, const char *text, size_t len, size_t n
         g_text_end   = text + len;
     }
     reg_syntax = preg_compile->syntax;
-    g_newline_anchor = preg_compile->newline_anchor;
     preg_compile->eflags = g_eflags = eflags;
     if (pmatch) {
         pmatch[0].rm_so = 0;
@@ -1480,11 +1618,19 @@ static int reg_exec_main(reg_compile_t *preg_compile, const char *text, int *mat
     assert(preg_compile->array);
     const char *rm_ep;
     pattern_t **pat = (pattern_t**)preg_compile->array->buckets;
+    *match_len = 0;
 
     do {    /* must look even if string is empty */
-        if (reg_match_here(preg_compile, pat, text, &rm_ep)) {
+        //reg_syntax_t org_syntax = reg_syntax;   //reg_syntax保存
+        reg_syntax = preg_compile->syntax;
+        if (preg_compile->set_syntax)   reg_syntax |= preg_compile->set_syntax;
+        if (preg_compile->unset_syntax) reg_syntax |= preg_compile->unset_syntax;
+        int ret = reg_match_here(preg_compile, pat, text, &rm_ep);
+        //reg_syntax = org_syntax;                //reg_syntax復元
+        if (ret) {
             set_match(preg_compile, text, rm_ep);
             *match_len = rm_ep - text;
+            reg_syntax = preg_compile->syntax;
             return 0;   //成功
         }
         if (preg_compile->match_here) break;
@@ -1713,7 +1859,10 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
             break;
         case NEGATIVE_LOOKBEHIND:
             ret = !ret;
-            if (ret==0) g_text_match_start = text + *match_len;
+            if (ret==0) {
+                *match_len = pat->regcomp->total_len;
+                g_text_match_start = text + *match_len;
+            }
             break;
         }
         return ret==0;
@@ -1750,18 +1899,16 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
     }
     case PAT_CARET:             //'^'
         if ((!(g_eflags&REG_NOTBOL) && text_is_start(text)) ||              //textの先頭にマッチ
-            (g_newline_anchor && !text_is_start(text) && *(text-1)=='\n')) {//'\n'の次の空白文字にマッチ
-            *match_len = 0; //長さ0にマッチ
-            return 1;
+            (syntax_is(RE_MULTILINE) && !text_is_start(text) && *(text-1)=='\n')) {//'\n'の次の空白文字にマッチ
+            *match_len = 0; return 1;
         }
         return 0;
     case PAT_DOLLAR:            //'$'
         if ((!(g_eflags&REG_NOTEOL) && text_is_end(text)) ||                //textの最後にマッチ
-            (g_newline_anchor && !text_is_end(text) && *text=='\n') ||      //'\n'の前の空白文字にマッチ
+            (syntax_is(RE_MULTILINE) && !text_is_end(text) && *text=='\n') ||//'\n'の前の空白文字にマッチ
                                                                             //PCREの$はtextの最後の'\n'にもマッチする
             (syntax_is(RE_PCRE2) && !text_is_end(text) && *text=='\n' && text_is_end(text+1))) {
-            *match_len = 0; //長さ0にマッチ
-            return 1;
+            *match_len = 0; return 1;
         }
         return 0;
     case PAT_TEXT_FIRST:        //"\A", "\`" textの先頭にマッチするが'\n'にはマッチしない
@@ -1789,6 +1936,10 @@ static int reg_match_pat(reg_compile_t *preg_compile, pattern_t *pat, const char
     case PAT_NOT_WORD_DELIM:    //"\B"
         if (!text_is_word_first(text) && !text_is_word_last(text)) {*match_len = 0; return 1;}
         return 0;
+    case PAT_SET_OPTION:
+        reg_syntax |=  pat->set_syntax;
+        reg_syntax &= ~pat->unset_syntax;
+        *match_len = 0; return 1;
     default:
         assert(0);
     }
@@ -1842,7 +1993,7 @@ static void reg_pattern_free(pattern_t *pat) {
 
 //定数とそのシンボル名のテーブル
 typedef struct {
-    int num;
+    uint64_t num;
     const char *name;
 } name_tbl_t;
 #define REG_TBL(s)  {REG_##s, #s}   //REG_TBL(EXTENDED) -> {REG_EXTENDED, "REG_EXTENDED"}
@@ -1871,16 +2022,19 @@ static name_tbl_t syntax_tbl[] = {
     RE_TBL(UNMATCHED_RIGHT_PAREN_ORD),
     RE_TBL(NO_GNU_OPS),
     RE_TBL(ICASE),
+    RE_TBL(MULTILINE),
     RE_TBL(PCRE2),
+    RE_TBL(COMMENT),
+    RE_TBL(COMMENT_EXT),
     RE_TBL(ERROR_UNKNOWN_ESCAPE),
     RE_TBL(ERROR_DUP_REPEAT),
     RE_TBL(ALLOW_UNBALANCED_MINUS_IN_LIST),
     RE_TBL(ALLOW_ILLEGAL_REPEAT),
 };
-static const char* reg_flag2str(int flags, name_tbl_t *tbl, size_t size, char buf[]) {
+static const char* reg_flag2str(uint64_t flags, name_tbl_t *tbl, size_t size, char buf[]) {
     char *p = buf;
     int cnt = 0;
-    int junk = flags;
+    uint64_t junk = flags;
     *p = '\0';
     for (int i=0; i<size; i++) {
         if (flags&tbl[i].num) {
@@ -1889,7 +2043,7 @@ static const char* reg_flag2str(int flags, name_tbl_t *tbl, size_t size, char bu
             junk &= ~tbl[i].num;
         }
     }
-    if (junk) sprintf(p, "|0x%x", junk);
+    if (junk) sprintf(p, "|0x%lx", junk);
     return buf;
 }
 const char* reg_cflags2str(int cflags) {
@@ -1900,7 +2054,7 @@ const char* reg_eflags2str(int eflags) {
     static char buf[256];
     return reg_flag2str(eflags, eflags_tbl, sizeof(eflags_tbl)/sizeof(eflags_tbl[0]), buf);
 }
-const char* reg_syntax2str(int syntax) {
+const char* reg_syntax2str(reg_syntax_t syntax) {
     static char buf[1024];
     return reg_flag2str(syntax, syntax_tbl, sizeof(syntax_tbl)/sizeof(syntax_tbl[0]), buf);
 }
@@ -1999,21 +2153,30 @@ void reg_dump(FILE *fp, reg_compile_t *preg_compile, int indent) {
     }
     fprintf(fp, "regexp='");
     reg_print_str(fp, preg_compile->regexp, preg_compile->rlen);
-    fprintf(fp, "', match_here=%d, newline_anchor=%d, nparen=%d, ref_num=%d, backref_flags=%x",
-        preg_compile->match_here, preg_compile->newline_anchor, preg_compile->nparen, preg_compile->ref_num,
+    fprintf(fp, "', match_here=%d, nparen=%d, ref_num=%d, backref_flags=%x",
+        preg_compile->match_here, preg_compile->nparen, preg_compile->ref_num,
         preg_compile->backref_flags);
     if (preg_compile->assertion)
-        fprintf(fp, ", assertion=%s", assertion_str[preg_compile->assertion]);
+        fprintf(fp, ", assertion=%s, total_len=%d, ", assertion_str[preg_compile->assertion], preg_compile->total_len);
     fprintf(fp, ", cflags=%s\n", reg_cflags2str(preg_compile->cflags));
 
     if (preg_compile->syntax) {
         fprintf(stderr, "%*s", indent, ""); // indent個の空白を出力
-        fprintf(fp, "syntax=%s\n", reg_syntax2str(preg_compile->syntax));
+        fprintf(fp, "syntax=%lx:%s\n", preg_compile->syntax, reg_syntax2str(preg_compile->syntax));
+    }
+    if (preg_compile->set_syntax) {
+        fprintf(stderr, "%*s", indent, ""); // indent個の空白を出力
+        fprintf(fp, "set_syntax=%s\n", reg_syntax2str(preg_compile->set_syntax));
+    }
+    if (preg_compile->unset_syntax) {
+        fprintf(stderr, "%*s", indent, ""); // indent個の空白を出力
+        fprintf(fp, "unset_syntax=%s\n", reg_syntax2str(preg_compile->unset_syntax));
     }
 
     array_t *array = preg_compile->array;
     for (int i=0; i<array->num; i++) {
         pattern_t *pat = array->buckets[i];
+        if (pat->type==PAT_NULL) break;
         fprintf(stderr, "%*s", indent, ""); // indent個の空白を出力
         fprintf(fp, "PAT[%2d]: type=%-11s: ", i, pattern_type_str[pat->type]);
         switch (pat->type) {
@@ -2068,6 +2231,10 @@ void reg_dump(FILE *fp, reg_compile_t *preg_compile, int indent) {
                           for (int i=0; i<num_array(pat->or_array); i++)
                             reg_dump(fp, peek_array(pat->or_array, i), indent+2);
                           break;
+        case PAT_SET_OPTION:
+            if (pat->set_syntax)   fprintf(fp, "%s", reg_syntax2str(pat->set_syntax));
+            if (pat->unset_syntax) fprintf(fp, "-%s", reg_syntax2str(pat->unset_syntax));
+            fprintf(fp, "\n"); break;
         default:          fprintf(fp, "\n"); break;
         }
     }
@@ -2098,6 +2265,7 @@ static reg_err_info_t reg_err_def[] = {
     {/*102*/REG_ERR_CODE_CTRL_C_AT_END,             "\\c at end of pattern"},
     {/*103*/REG_ERR_CODE_UNKNOWN_ESCAPE,            "unrecognized character follows"},
     {/*111*/REG_ERR_CODE_UNRECOGNIZED_CHAR_PAREN,   "unrecognized character after (? or (?-"},
+    {/*125*/REG_ERR_CODE_LOOKBEHIND_NOT_FIXLEN,     "lookbehind assertion is not fixed length"},
     {/*134*/REG_ERR_CODE_CODE_POINT_TOO_LARGE,      "character code point value in \\x{} or \\o{} is too large"},
     {/*142*/REG_ERR_CODE_SYNTAX_ERR_IN_SUBPTN_NAME, "syntax error in subpattern name (missing terminator?)"},
     {/*137*/REG_ERR_CODE_INVALID_UNICODE,           "invalid \\N{U+}"},
@@ -2107,6 +2275,7 @@ static reg_err_info_t reg_err_def[] = {
     {/*167*/REG_ERR_CODE_NON_HEX_CHAR,              "non-hex character in \\x{} (closing brace missing?)"},
     {/*168*/REG_ERR_CODE_NOT_PRINTABLE_ASCII,       "\\c must be followed by a printable ASCII character"},
     {/*178*/REG_ERR_CODE_DIGITS_MISSING,            "digits missing in \\x{} or \\o{} or \\N{U+}"},
+    {/*194*/REG_ERR_CODE_INVALID_HYPHEM_IN_OPTION,  "invalid hyphen in option setting"},
 };
 reg_err_info_t reg_err_info = {0,""};    //エラーコード
 

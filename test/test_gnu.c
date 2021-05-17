@@ -2,7 +2,7 @@
 
 //パターンをコンパイルする。
 //成功時は0、異常時は0以外を返す。
-int gnu_regcomp(void *vpreg, const char *pattern, size_t len, int cflags, int on_syntax, int off_syntax, size_t *nmatch) {
+int gnu_regcomp(void *vpreg, const char *pattern, size_t len, int cflags, reg_syntax_t on_syntax, reg_syntax_t off_syntax, size_t *nmatch) {
     int ret = 0;
     regex_t *preg = vpreg;
     static char buf[128];
@@ -15,7 +15,7 @@ int gnu_regcomp(void *vpreg, const char *pattern, size_t len, int cflags, int on
         ref_err_info.err_msg = buf;
         regerror(ret, preg, buf, sizeof(buf));
     } else {
-        int syntax = ((cflags & REG_EXTENDED) ? RE_SYNTAX_POSIX_EXTENDED : RE_SYNTAX_POSIX_BASIC);
+        reg_syntax_t syntax = ((cflags & REG_EXTENDED) ? RE_SYNTAX_POSIX_EXTENDED : RE_SYNTAX_POSIX_BASIC);
         syntax |= (cflags & REG_ICASE) ? RE_ICASE : 0;
         if (cflags & REG_NEWLINE)
             { /* REG_NEWLINE implies neither . nor [^...] match newline.  */
